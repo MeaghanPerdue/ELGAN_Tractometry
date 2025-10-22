@@ -1,0 +1,5 @@
+{
+    "t1w": {"datatype": "T1w"},
+    "dwi": { "datatype": "dwi", 
+            "acquisition": ["ABCD1","ABCD2"]}
+}

@@ -1,0 +1,7 @@
+{
+    "t2w": {"datatype": "anat", 
+            "suffix": "T2w"},
+    "dwi": { "datatype": "dwi", 
+            "acquisition": null},
+    "fmap": {"datatype": "fmap"}
+}
