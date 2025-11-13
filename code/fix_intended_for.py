@@ -29,31 +29,36 @@ def fix_intended_for_field(bids_root):
 
                         inferred_paths = []
                         if subject.startswith('P'):
+                            # Construct path for P subjects
                             if session:
-                                inferred_paths = [f"sub-{subject}/ses-{session}/dwi/sub-{subject}_ses-{session}_dwi.nii.gz"]
+                                inferred_paths = [f"ses-{session}/dwi/sub-{subject}_ses-{session}_dwi.nii.gz"]
                             else:
-                                inferred_paths = [f"sub-{subject}/dwi/sub-{subject}_dwi.nii.gz"]
+                                inferred_paths = [f"dwi/sub-{subject}_dwi.nii.gz"]
                         elif subject.startswith('E'):
+                            # Construct path for E subjects (ABCD files)
                             dwi_dir = os.path.join(bids_root, f"sub-{subject}", f"ses-{session}" if session else "", "dwi")
                             if os.path.isdir(dwi_dir):
                                 abcd_files = glob.glob(os.path.join(dwi_dir, "*ABCD*.nii.gz"))
                                 inferred_paths = [
-                                    os.path.relpath(path, bids_root).replace("\\", "/") for path in abcd_files
+                                    os.path.relpath(path, os.path.join(bids_root, f"sub-{subject}")).replace("\\", "/")
+                                    for path in abcd_files
                                 ]
 
                         if not inferred_paths:
                             print(f"No DWI path found for {file_path}")
                             continue
 
+                        # SAFEGUARD: Ensure all filenames keep 'sub-' prefix
+                        inferred_paths = [
+                            path if re.search(r'/sub-', path) else re.sub(r'(/)([^/]+_ses)', r'\1sub-\2', path)
+                            for path in inferred_paths
+                        ]
+
                         # Update IntendedFor field
                         if 'IntendedFor' in data and isinstance(data['IntendedFor'], list):
-                            cleaned = [path.replace('bids::', '') for path in data['IntendedFor']]
-                            if not cleaned:
+                            if data['IntendedFor'] != inferred_paths:
                                 data['IntendedFor'] = inferred_paths
-                                print(f"Filled empty IntendedFor in: {file_path}")
-                            elif cleaned != data['IntendedFor']:
-                                data['IntendedFor'] = cleaned
-                                print(f"Cleaned IntendedFor in: {file_path}")
+                                print(f"Updated IntendedFor in: {file_path}")
                             else:
                                 print(f"No change needed: {file_path}")
                         else:
@@ -68,5 +73,5 @@ def fix_intended_for_field(bids_root):
                         print(f"Error processing {file_path}: {e}")
 
 # Example usage
-bids_directory = '/Volumes/LaCie/Projects/elgan_dti/data'
+bids_directory = '/Volumes/LaCie/Projects/elgan_dti/data/Site-160_PING'
 fix_intended_for_field(bids_directory)
