@@ -1,7 +1,7 @@
 #!/bin/bash 
 # loop over job submission for qsiprep on HPC, first creating subject-specific job file, then submit job
 
-for i in $(cat tmpsubs.txt); do
+for i in $(cat pingsubs.txt); do
     cat >> bsub_qsiprep_$i.sh << EOF
     #!/bin/bash
     #BSUB -n 8				      
@@ -23,16 +23,15 @@ for i in $(cat tmpsubs.txt); do
         --skip-bids-validation \
         --participant-label $i \
         --session-id ses-01 \
-        --bids-filter-file /code/bids_filter_dti.json \
+        --bids-filter-file /code/bids_filter_dti_ping.json \
         --eddy-config /code/eddy_params.json \
-        --output-resolution 1.75 \
+        --output-resolution 1.5 \
         --n-cpus 8 \
         --mem 16G \
         --separate-all-dwis \
         --anat-modality T2w \
         --denoise-method none \
         --unringing-method none \
-        --distortion-group-merge concat \
         --pepolar-method TOPUP
 EOF
 
