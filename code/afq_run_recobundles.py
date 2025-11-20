@@ -20,4 +20,4 @@ afq = GroupAFQ(
 afq.clobber(dependent_on="recog")
 
 # Recompute segmentation and subsequent steps
-afq.run()
+afq.export_all()
