@@ -8,8 +8,8 @@ from AFQ.api.group import GroupAFQ
 afq = GroupAFQ(
     bids_path="/bids",
     output_dir="/derivatives/afq",
+    segmentation="reco",
     segmentation_params={
-        "seg_algo": "reco",  # Use RecoBundles
         "refine_reco": True, # Optional refinement
         "rb_recognize_params": {
             "model_clust_thr": 1.25,
