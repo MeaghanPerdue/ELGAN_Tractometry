@@ -7,7 +7,7 @@ from AFQ.api.group import GroupAFQ
 afq = GroupAFQ(
     bids_path="/bids",
     output_dir="/derivatives/afq",
-    seg_algo="reco",                # switch to RecoBundles
+    segmentation_params={'seg_algo': 'reco'},     # switch to RecoBundles
     refine_reco=True,               # enable refinement
     rb_recognize_params={
         "model_clust_thr": 1.25,
