@@ -2,19 +2,20 @@
 # use this in order to run Recobundles segmentation on the same tractography used for AFQ-waypoints
 
 from AFQ.api.group import GroupAFQ
+import AFQ.api.bundle_dict as abd
 
 # Initialize AFQ object
 
 afq = GroupAFQ(
     bids_path="/bids",
     output_dir="/derivatives/afq",
-    segmentation="reco",
+    bundle_info=abd.reco_bd(16),
     segmentation_params={
-        "refine_reco": True, # Optional refinement
-        "rb_recognize_params": {
-            "model_clust_thr": 1.25,
-            "pruning_thr": 12,
-            "reduction_thr": 25,
+        'refine_reco': True, 
+        'rb_recognize_params': {
+            'model_clust_thr': 1.25,
+            'pruning_thr': 12,
+            'reduction_thr': 25,
         }
     }
 )
