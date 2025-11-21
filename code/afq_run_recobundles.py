@@ -14,7 +14,7 @@ afq = GroupAFQ(
         "rb_recognize_params": {
             "model_clust_thr": 1.25,
             "pruning_thr": 12,
-            "reduction_thr": 25
+            "reduction_thr": 25,
         }
     }
 )

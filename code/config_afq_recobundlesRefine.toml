@@ -23,7 +23,7 @@ preproc_pipeline = "qsiprep"
 # processing on. If None (empty quotes), all subjects are used.
 # Format: participant_labels = ['IDSTRING'] exclude 'sub-' prefix
 # Default: None
-participant_labels = "['E1600071G', 'E1600121J', 'E1600151G', 'E1600221H', 'E1600281B', 'E1600291A', 'E1600331E', 'E1600411E', 'E1600431C', 'E1600501D', 'E1600521B', 'E1600601A', 'E1600652F', 'E1600662E', 'E1600702K', 'E1600721I', 'E1600722G',	'E1600861C']"
+participant_labels = ""
 
 # Path to output directory. If None, outputs are put
 # in a AFQ pipeline folder in the derivatives folder of
@@ -32,7 +32,7 @@ participant_labels = "['E1600071G', 'E1600121J', 'E1600151G', 'E1600221H', 'E160
 # them (this means you need to clear the output folder if you want
 # to recalculate a derivative).
 # Default: None
-output_dir = "/derivatives/afq_recobundles"
+output_dir = "/derivatives/afq"
 
 # Rerun
 cmd="rm"
