@@ -4,11 +4,11 @@
 for i in $(cat tmpsubs.txt); do
     cat >> bsub_qsiprep_$i.sh << EOF
     #!/bin/bash
-    #BSUB -n 8				      
-    #BSUB -R "rusage[mem=32G]"                               
+    #BSUB -n 4			      
+    #BSUB -R "rusage[mem=4G]"                               
     #BSUB -q gpu	
     #BSUB -m V100		     
-    #BSUB -W 02:00
+    #BSUB -W 04:00
 
 
 
@@ -29,8 +29,8 @@ for i in $(cat tmpsubs.txt); do
         --bids-filter-file /code/bids_filter_dti.json \
         --eddy-config /code/eddy_params.json \
         --output-resolution 1.5 \
-        --n-cpus 8 \
-        --mem 32G \
+        --n-cpus 4 \
+        --mem 16G \
         --separate-all-dwis \
         --anat-modality T2w \
         --denoise-method none \
