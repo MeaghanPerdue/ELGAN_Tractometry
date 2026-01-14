@@ -37,6 +37,8 @@ for i in $(cat tmpsubs.txt); do
         --unringing-method none \
         --use-syn-sdc error \
         --force-syn
+
+    rm -R /home/meaghan.perdue-umw/elgan_dti/work/qsiprep_1_0_wf/sub_${i}
 EOF
 
     bsub bsub_qsiprep_$i.sh
