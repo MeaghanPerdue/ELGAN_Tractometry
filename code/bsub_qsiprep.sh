@@ -3,22 +3,21 @@
 
 for i in $(cat tmpsubs.txt); do
     cat >> bsub_qsiprep_$i.sh << EOF
-    #!/bin/bash
-    #BSUB -n 4 "span[hosts=1]"			      
-    #BSUB -R "rusage[mem=4G], rusage[tmp=50G]"                               
-    #BSUB -q gpu	
-    #BSUB -m V100		     
-    #BSUB -W 08:00
-    #BSUB -P onejobperhost
+#!/bin/bash
+#BSUB -n 4 -R "span[hosts=1],rusage[mem=8G], rusage[tmp=50G]"			                                  
+#BSUB -q gpu	
+#BSUB -m V100		     
+#BSUB -W 08:00
 
 
 
-    # submit job to run a single participant through qsiprep for DTI only
+
+# submit job to run a single participant through qsiprep for DTI only
 
 
-    module load apptainer
+module load apptainer
 
-    apptainer run --containall --writable-tmpfs --nv \
+apptainer run --containall --writable-tmpfs --nv \
         -B $HOME/elgan_dti/code:/code,$HOME/elgan_dti/data:/bids,$HOME/elgan_dti/data/derivatives/qsiprep:/out,/tmp:/tmp,license.txt:/opt/freesurfer/license.txt \
         qsiprep-v1.0.1.sif \
         /bids /out participant \
