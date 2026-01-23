@@ -4,11 +4,12 @@
 for i in $(cat tmpsubs.txt); do
     cat >> bsub_qsiprep_$i.sh << EOF
     #!/bin/bash
-    #BSUB -n 4			      
-    #BSUB -R "rusage[mem=4G]"                               
+    #BSUB -n 4 "span[hosts=1]"			      
+    #BSUB -R "rusage[mem=4G], rusage[tmp=50G]"                               
     #BSUB -q gpu	
     #BSUB -m V100		     
-    #BSUB -W 04:00
+    #BSUB -W 08:00
+    #BSUB -P onejobperhost
 
 
 
@@ -18,10 +19,10 @@ for i in $(cat tmpsubs.txt); do
     module load apptainer
 
     apptainer run --containall --writable-tmpfs --nv \
-        -B $HOME/elgan_dti/code:/code,$HOME/elgan_dti/data:/bids,$HOME/elgan_dti/data/derivatives/qsiprep:/out,$HOME/elgan_dti/work:/work,license.txt:/opt/freesurfer/license.txt \
+        -B $HOME/elgan_dti/code:/code,$HOME/elgan_dti/data:/bids,$HOME/elgan_dti/data/derivatives/qsiprep:/out,/tmp:/tmp,license.txt:/opt/freesurfer/license.txt \
         qsiprep-v1.0.1.sif \
         /bids /out participant \
-        -w /work \
+        -w /tmp \
         --fs-license-file /opt/freesurfer/license.txt \
         --skip-bids-validation \
         --participant-label $i \
@@ -38,7 +39,6 @@ for i in $(cat tmpsubs.txt); do
         --use-syn-sdc error \
         --force-syn
 
-    rm -R /home/meaghan.perdue-umw/elgan_dti/work/qsiprep_1_0_wf/sub_${i}
 EOF
 
     bsub bsub_qsiprep_$i.sh
