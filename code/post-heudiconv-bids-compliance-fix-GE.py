@@ -12,6 +12,7 @@ import argparse
 import csv
 import json
 import shutil
+import glob
 import subprocess
 import tempfile
 from pathlib import Path
@@ -145,3 +146,153 @@ def iter_sessions(bids_dir):
 # Parse arguments
 # ---------------------------------------------------------
 parser = argparse.ArgumentParser(description="Fix BIDS JSONs + PDT2 rename + GE fields")
+parser.add_argument("--check", "-c", action="store_true")
+parser.add_argument("--diff", "-d", action="store_true")
+parser.add_argument("--restore", "-r", action="store_true")
+parser.add_argument("--dry-run", "-n", action="store_true")
+parser.add_argument("bids_dir", type=arg_bids_dir)
+args = parser.parse_args()
+
+ensure_bidsignore(args.bids_dir)
+
+
+# ---------------------------------------------------------
+# STEP 1 — FIX JSONS (NO RENAMING YET)
+# ---------------------------------------------------------
+for subject, session, session_dir, scans in iter_sessions(args.bids_dir):
+    print(subject, session)
+
+    for scan in scans:
+        print(f"    {scan}")
+
+        if scan.data is None:
+            print("        Skipping JSON edits: missing JSON")
+            continue
+
+        if scan["subdir"] == "dwi":
+            print("        Updating DWI JSON fields")
+            scan.data["PhaseEncodingAxis"] = "j"
+            scan.data["PhaseEncodingDirection"] = "j-"
+            scan.data["TotalReadoutTime"] = 0.16218
+
+            if not args.dry_run:
+                shutil.move(scan.json_path, scan.json_backup_path)
+                with open(scan.json_path, "w") as f:
+                    json.dump(scan.data, f, indent=4)
+        else:
+            print("        No DWI changes")
+
+
+---------------------------------------------------------
+STEP 2 — UPDATE scans.tsv (SAFE)
+---------------------------------------------------------
+def update_scans_tsv(bids_dir):
+    bids_dir = pathlib.Path(bids_dir)
+    for subject_dir in bids_dir.glob("sub-*"):
+        for session_dir in subject_dir.glob("ses-*"):
+
+            scans_tsv = session_dir / f"{subject_dir.name}_{session_dir.name}_scans.tsv"
+            if not scans_tsv.exists():
+                print(f"WARNING: Missing scans.tsv: {scans_tsv}")
+                continue
+
+            with open(scans_tsv) as f:
+                reader = csv.DictReader(f, delimiter="\t")
+                rows = list(reader)
+                fieldnames = reader.fieldnames
+
+            changed = False
+
+            for row in rows:
+                fname = row.get("filename")
+                if not fname:
+                    print(f"WARNING: Missing filename in {scans_tsv}, skipping row")
+                    continue
+
+                nifti = session_dir / fname
+
+                if "acq-PDT2" in fname and "echo-" in fname and fname.endswith("_T2w.nii.gz"):
+                    echo = "1" if "echo-1" in fname else "2" if "echo-2" in fname else None
+                    if echo:
+                        new_suffix = "PDw" if echo == "1" else "T2w"
+                        row["filename"] = fname.replace(f"echo-{echo}_T2w", new_suffix)
+                        changed = True
+
+            if changed and not args.dry_run:
+                with open(scans_tsv, "w") as f:
+                    writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter="\t")
+                    writer.writeheader()
+                    writer.writerows(rows)
+                print(f"Updated: {scans_tsv}")
+
+
+update_scans_tsv(args.bids_dir)
+
+
+# ---------------------------------------------------------
+# STEP 3 — PDT2 RENAMING (AFTER TSV FIX)
+# ---------------------------------------------------------
+for subject, session, session_dir, scans in iter_sessions(args.bids_dir):
+    print(subject, session)
+
+    for scan in scans.iter_subdir("anat"):
+        if scan._params.get("acq") == "PDT2" and "echo" in scan._params:
+
+            echo = scan._params["echo"]
+            new_suffix = "PDw" if echo == 1 else "T2w"
+            new_name = scan.path.name.replace(f"echo-{echo}_T2w", new_suffix)
+
+            new_path = scan.path.parent / new_name
+            # FIX FOR .nii.json BUG — explicit json rename:
+            new_json = Path(str(new_path).replace(".nii.gz", ".json"))
+
+            print(f"        Renaming {scan.path.name} → {new_name}")
+
+            if not args.dry_run:
+                if scan.path.exists():
+                    scan.path.rename(new_path)
+                else:
+                    print(f"WARNING: Missing NIfTI, cannot rename: {scan.path}")
+
+                if scan.json_path.exists():
+                    scan.json_path.rename(new_json)
+                else:
+                    print(f"WARNING: Missing JSON, cannot rename: {scan.json_path}")
+
+# ---------------------------------------------------------
+# STEP 4 - COPY AND RENAME MASTER BVAL AND BVEC FILES ALONGSIDE SUBJECT-LEVEL DWIs
+# ---------------------------------------------------------
+# Paths to master files (in your BIDS root!)
+master_bval = args.bids_dir / 'dwi.bval'
+master_bvec = args.bids_dir / 'dwi.bvec'
+
+if not master_bval.exists() or not master_bvec.exists():
+    print(f"ERROR: Missing master dwi.bval or dwi.bvec in {args.bids_dir}")
+else:
+    for subject, session, session_dir, scans in iter_sessions(args.bids_dir):
+        if session != "ses-03":
+            continue  # restrict to ses-03 only
+
+        dwi_dir = session_dir / "dwi"
+        if not dwi_dir.exists():
+            print(f"WARNING: No dwi dir for {subject} {session}: {dwi_dir}")
+            continue
+
+        # Find all DWI NIfTI files
+        for nii_file in dwi_dir.glob("*.nii*"):
+            # Get base filename (without extension)
+            base = nii_file.name.replace(".nii.gz", "").replace(".nii", "")
+            bval_out = dwi_dir / f"{base}.bval"
+            bvec_out = dwi_dir / f"{base}.bvec"
+
+            if args.dry_run:
+                print(f"[dry-run] Would copy {master_bval} to {bval_out}")
+                print(f"[dry-run] Would copy {master_bvec} to {bvec_out}")
+            else:
+                shutil.copy2(master_bval, bval_out)
+                shutil.copy2(master_bvec, bvec_out)
+                print(f"Copied {master_bval} to {bval_out}")
+                print(f"Copied {master_bvec} to {bvec_out}")
+
+
+sys.exit(0)
