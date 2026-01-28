@@ -183,9 +183,9 @@ for subject, session, session_dir, scans in iter_sessions(args.bids_dir):
             print("        No DWI changes")
 
 
----------------------------------------------------------
-STEP 2 — UPDATE scans.tsv (SAFE)
----------------------------------------------------------
+# ---------------------------------------------------------
+# STEP 2 — UPDATE scans.tsv (SAFE)
+# ---------------------------------------------------------
 def update_scans_tsv(bids_dir):
     bids_dir = pathlib.Path(bids_dir)
     for subject_dir in bids_dir.glob("sub-*"):
