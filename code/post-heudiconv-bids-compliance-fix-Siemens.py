@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 # original by Christian Haselgrove
-# Modified for ELGAN3 by Meaghan Perdue (PDT2 handling + TE-aware renaming)
-# This version derives PDw/T2w from EchoTime in JSON; falls back to echo number.
+# Modified for ELGAN3 by Meaghan Perdue with Copilot (PDT2 handling + TE-aware renaming + filesystem sweep)
+# This version:
+#   • derives PDw/T2w from EchoTime (TE) in JSON; falls back to echo-<n> in filename
+#   • removes echo-<n>_ from basenames
+#   • renames both .nii.gz and matching .json sidecars
+#   • updates each session's scans.tsv to match the final names
+#   • adds a filesystem sweep so files not listed in scans.tsv are still normalized
 
 import sys
 import os
@@ -11,11 +16,12 @@ import csv
 import json
 import re
 from pathlib import Path
+from typing import Optional  # Python 3.8/3.9 union compatibility
 
 # ----------------------------
 # Settings / constants
 # ----------------------------
-BACKUP_EXTENSION = 'bak'  # Reserved; no backups are created by this script
+BACKUP_EXTENSION = 'bak'  # Reserved; kept for parity, not used for writes
 
 # TE classification thresholds (ms)
 PDW_MAX_MS = 20.0             # TE < 20 ms -> PDw
@@ -32,7 +38,7 @@ ECHO_ENTITY_RE = re.compile(r'echo-\d+_')         # echo-<n>_ entity within stem
 def ensure_bidsignore(bids_dir: pathlib.Path):
     """
     Ensure a .bidsignore exists. If present and doesn't list *.bak, append it.
-    (We don't create .bak files here, but keeping this for parity with prior script.)
+    (We don't create .bak files here, but harmless to include.)
     """
     bids_dir = pathlib.Path(bids_dir)
     bidsignore_path = bids_dir / '.bidsignore'
@@ -173,7 +179,7 @@ class Scan:
 # ----------------------------
 # PDT2 helpers (TE-aware)
 # ----------------------------
-def read_te_ms(json_path: Path) -> float | None:
+def read_te_ms(json_path: Path) -> Optional[float]:
     """
     Return EchoTime in milliseconds from a BIDS JSON sidecar.
     - BIDS standard is seconds (<= 1.0) -> convert to ms
@@ -206,7 +212,7 @@ def read_te_ms(json_path: Path) -> float | None:
         return te * 1000.0   # seconds -> ms
     return te               # already looks like ms
 
-def modality_from_te(te_ms: float | None) -> str | None:
+def modality_from_te(te_ms: Optional[float]) -> Optional[str]:
     """
     Return 'PDw' if TE < 20 ms; 'T2w' if 90 < TE < 110 ms; else None.
     """
@@ -232,7 +238,6 @@ def normalized_pdt2_name_with_suffix(basename: str, suffix: str) -> str:
         stem = basename[:-7]
         ext = '.nii.gz'
     else:
-        # Unknown extension; treat as plain stem (rare in BIDS)
         stem, ext = os.path.splitext(basename)
 
     # Remove echo entity anywhere in stem & drop trailing modality suffix if present
@@ -241,6 +246,60 @@ def normalized_pdt2_name_with_suffix(basename: str, suffix: str) -> str:
 
     new_stem = f"{stem}_{suffix}"
     return f"{new_stem}{ext}"
+
+# ----------------------------
+# Filesystem sweep (catch files not in scans.tsv)
+# ----------------------------
+def process_pdt2_in_anat_dir(anat_dir: Path, dry_run: bool = False):
+    """
+    Filesystem sweep: normalize all acq-PDT2 files in anat/, independent of scans.tsv.
+    Uses TE from JSON when available; falls back to echo-<n>_ in the basename.
+    """
+    if not anat_dir.exists():
+        return
+
+    nii_paths = sorted(anat_dir.glob("*_acq-PDT2_*nii.gz"))
+    for nii_path in nii_paths:
+        base = nii_path.name
+        json_path = nii_path.with_suffix("").with_suffix(".json")
+
+        # TE-based suffix if possible
+        te_ms = read_te_ms(json_path) if json_path.exists() else None
+        suffix = modality_from_te(te_ms)
+
+        # Fallback to echo number from filename
+        if suffix is None:
+            m = re.search(r'echo-(\d+)_', base)
+            if m:
+                try:
+                    echo = int(m.group(1))
+                    suffix = "PDw" if echo == 1 else "T2w"
+                except Exception:
+                    pass
+
+        if suffix is None:
+            print(f"  WARNING: Cannot determine PDw/T2w for {base} (no usable TE/echo). Skipping.")
+            continue
+
+        # Compute normalized basenames for NIfTI and JSON
+        new_nii_name = normalized_pdt2_name_with_suffix(base, suffix)
+        new_nii_path = nii_path.parent / new_nii_name
+        new_json_path = Path(str(new_nii_path).replace(".nii.gz", ".json"))
+
+        if new_nii_name != base:
+            print(f"  [FS] Renaming {base} → {new_nii_name}")
+            if not dry_run:
+                # Rename NIfTI
+                if nii_path.exists():
+                    nii_path.rename(new_nii_path)
+                else:
+                    print(f"WARNING: Missing NIfTI, cannot rename: {nii_path}")
+
+                # Rename JSON sidecar (if exists)
+                if json_path.exists():
+                    json_path.rename(new_json_path)
+                else:
+                    print(f"WARNING: Missing JSON, cannot rename: {json_path}")
 
 # ----------------------------
 # scans.tsv updater (TE-aware)
@@ -331,7 +390,8 @@ def main():
         Fallback: echo-1 -> PDw, echo-2 -> T2w
       - Remove echo-<n>_ from basenames.
       - Rename both .nii.gz and .json sidecars.
-      - Update each session's scans.tsv to match.
+      - Filesystem sweep ensures files not in scans.tsv are still normalized.
+      - Update each session's scans.tsv to match final names.
 
     Use -n/--dry-run to preview changes without writing.
     """
@@ -351,7 +411,13 @@ def main():
     # Ensure .bidsignore exists (harmless even though we don't write .bak)
     ensure_bidsignore(args.bids_dir)
 
-    # --- STEP 1: Rename files on disk (TE-aware) ---
+    # --- STEP 1: Filesystem sweep (normalize any missed PDT2 files) ---
+    for subject, session, session_dir, scans in iter_sessions(args.bids_dir):
+        print(subject, session)
+        anat_dir = session_dir / "anat"
+        process_pdt2_in_anat_dir(anat_dir, dry_run=args.dry_run)
+
+    # --- STEP 2: TSV-driven pass (normalize PDT2 files that ARE in scans.tsv) ---
     for subject, session, session_dir, scans in iter_sessions(args.bids_dir):
         print(subject, session)
         for scan in scans.iter_subdir("anat"):
@@ -394,14 +460,9 @@ def main():
                         old_json.rename(new_json)
                     else:
                         print(f"WARNING: Missing JSON, cannot rename: {old_json}")
-            else:
-                # Already normalized
-                pass
 
-    # --- STEP 2: Update scans.tsv to reflect final names ---
+    # --- STEP 3: Update scans.tsv to reflect final names ---
     update_scans_tsv(args.bids_dir, dry_run=args.dry_run)
 
 if __name__ == "__main__":
     main()
-
-#### eof ####
