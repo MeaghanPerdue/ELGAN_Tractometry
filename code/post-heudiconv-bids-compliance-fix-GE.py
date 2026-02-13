@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 # original by Christian Haselgrove
 # Modified for ELGAN3 by Meaghan Perdue (July 2025; updated Oct 2025)
