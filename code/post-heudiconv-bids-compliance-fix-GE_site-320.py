@@ -419,8 +419,8 @@ def fix_dwi_json(session_dir: Path, dry_run=False):
             data["PhaseEncodingAxis"] = "j"; changed = True
         if data.get("PhaseEncodingDirection") != "j-":
             data["PhaseEncodingDirection"] = "j-"; changed = True
-        if data.get("TotalReadoutTime") != 0.16218:
-            data["TotalReadoutTime"] = 0.16218; changed = True
+        if data.get("TotalReadoutTime") != 0.09274301886792452:
+            data["TotalReadoutTime"] = 0.09274301886792452; changed = True
         if changed:
             print(f"  Updating DWI JSON fields: {json_file.name}")
             write_json(json_file, data, dry_run=dry_run, backup=True)
