@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # original by Christian Haselgrove
-# Modified for ELGAN3 by Meaghan Perdue
+# Modified for ELGAN3 by Meaghan Perdue with copilot
 # Philips version with TE-based PDT2 renaming + robust scans.tsv rebuild + safe fmap/DWI JSON updates (Feb 2026)
 
 import sys
