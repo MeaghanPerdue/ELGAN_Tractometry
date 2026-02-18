@@ -74,13 +74,13 @@ def infotodict(seqinfo):
             assign = t1w_mprage
         elif 'MPRAGE' in name.upper() or 'T1W_MPR' in name.upper() and 'NORM' in s.image_type:
             assign = t1w_mprage_norm
-        elif 'TSE_TB' in name.upper() and s.TE < 30:
+        elif 'TSE_TB' in name.upper() or 'SE-TSE' in name.upper() and s.TE < 30:
             assign = t1w_se
         elif 'DMRI_SBREF' in name.upper():
             assign = dwi_sbref
-        elif 'DMRI' in name.upper() and 'VECTOR2' not in name.upper() and s.dim4 == 172:
+        elif 'DMRI' in name.upper() and 'VECTOR2' not in name.upper() and s.dim4 > 1:
             assign = dwi_16dir
-        elif 'dMRI' in name and 'VECTOR2' in name.upper() and s.dim4 == 172:
+        elif 'dMRI' in name and 'VECTOR2' in name.upper() and s.dim4 > 1:
             assign = dwi_16dir_vec2
         elif 'DE-TSE' in name.upper(): 
             if s.TE < 20:
