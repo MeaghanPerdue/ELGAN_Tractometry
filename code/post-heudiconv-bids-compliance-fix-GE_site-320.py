@@ -405,7 +405,7 @@ def rebuild_scans_tsv(session_dir: Path, mapping_old_to_new: Dict[str, str], dry
 # ----------------------------
 # GE-specific DWI JSON fix 
 # Calculated TotalReadoutTime from DICOMS fields according to 'calculate_TotalReadoutTimeGE.py'
-# Set PE direction to 'i' for L-R based on DICOM info and visual inspection of raw data 
+# Set PE direction to 'i' for Right->Left based on DICOM info and visual inspection of raw data 
 # ----------------------------
 def fix_dwi_json(session_dir: Path, dry_run=False):
     """Apply GE DWI JSON field updates."""
@@ -419,6 +419,8 @@ def fix_dwi_json(session_dir: Path, dry_run=False):
         changed = False
         if data.get("PhaseEncodingAxis") != "i":
             data["PhaseEncodingAxis"] = "i"; changed = True
+        if data.get("PhaseEncodingDirection") != "i-":
+            data["PhaseEncodingDirection"] = "i-"; changed = True
         if data.get("TotalReadoutTime") != 0.09274301886792452:
             data["TotalReadoutTime"] = 0.09274301886792452; changed = True
         if changed:
