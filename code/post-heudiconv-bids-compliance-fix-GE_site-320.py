@@ -13,13 +13,13 @@
 ### HOW-TO 
 ### ------------------------------------------------------------------
 # Dry-run to preview changes
-# python post-heudiconv-bids-compliance-fix-GE.py -n /path/to/bids_root
+# python post-heudiconv-bids-compliance-fix-GE_site-320.py -n /path/to/bids_root
 
 # Use threshold strategy (default) with echo-index fallback
-# python post-heudiconv-bids-compliance-fix-GE.py --fallback-echo-index /path/to/bids_root
+# python post-heudiconv-bids-compliance-fix-GE_site-320.py --fallback-echo-index /path/to/bids_root
 
 # Use relative strategy (shortest TE -> PDw, longest TE -> T2w)
-# python post-heudiconv-bids-compliance-fix-GE.py --te-strategy relative /path/to/bids_root
+# python post-heudiconv-bids-compliance-fix-GE_site-320.py --te-strategy relative /path/to/bids_root
 
 import sys
 import os
