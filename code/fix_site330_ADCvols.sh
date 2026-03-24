@@ -8,9 +8,20 @@
 
 cd $elgan_dti/data/site-330/${1}/ses-03/dwi
 
+echo "removing first volume ADC image from DWI series"
 mrconvert ${1}_ses-03_dwi.nii.gz -coord 3 1:15 dwi.nii.gz -fslgrad ${1}_ses-03_dwi.bvec ${1}_ses-03_dwi.bval -export_grad_fsl dwi.bvec dwi.bval --force
-dwigradcheck dwi.nii.gz -fslgrad dwi.bvec dwi.bval -export_grad_fsl dwi_gradcheck.bvec dwi_gradcheck.bval 
+
+echo "fixing .bval file to include b=0 as first volume"
+sed -i 's/^1000/0/' dwi.bval
+
+echo "create a rough brain mask for gradient check and tractography"
 dwi2mask dwi.nii.gz mask.nii.gz
+
+echo "fix gradients using MRtrix3 dwigradcheck function"
+dwigradcheck dwi.nii.gz -fslgrad dwi.bvec dwi.bval -mask mask.nii.gz -export_grad_fsl dwi_gradcheck.bvec dwi_gradcheck.bval 
+
+echo "create rough tractogram for visual inspection"
 tckgen -algorithm tensor_det ${1}_ses-03_dwi.nii.gz -fslgrad dwi_gradcheck.bvec dwi_gradcheck.bval -mask mask.nii.gz -seed_image mask.nii.gz -select 10k wb_tracts_10k.tck
+
 echo "check output tractogram, rename dwi files and delete extra files" 
 
