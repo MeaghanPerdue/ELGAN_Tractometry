@@ -12,7 +12,7 @@ echo "removing first volume ADC image from DWI series"
 mrconvert ${1}_ses-03_dwi.nii.gz -coord 3 1:15 dwi.nii.gz -fslgrad ${1}_ses-03_dwi.bvec ${1}_ses-03_dwi.bval -export_grad_fsl dwi.bvec dwi.bval --force
 
 echo "fixing .bval file to include b=0 as first volume"
-sed -i 's/^1000/0/' dwi.bval
+sed -i '' 's/^1000/0/' dwi.bval
 
 echo "fix gradients using MRtrix3 dwigradcheck function"
 dwigradcheck dwi.nii.gz -fslgrad dwi.bvec dwi.bval -export_grad_fsl dwi_gradcheck.bvec dwi_gradcheck.bval 
