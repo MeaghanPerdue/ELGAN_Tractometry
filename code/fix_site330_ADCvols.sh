@@ -9,10 +9,17 @@
 cd $elgan_dti/data/site-330/${1}/ses-03/dwi
 
 echo "removing first volume ADC image from DWI series"
-mrconvert ${1}_ses-03_dwi.nii.gz -coord 3 1:15 dwi.nii.gz -fslgrad ${1}_ses-03_dwi.bvec ${1}_ses-03_dwi.bval -export_grad_fsl dwi.bvec dwi.bval --force
+mrconvert ${1}_ses-03_dwi.nii.gz -coord 3 1:15 dwi.nii.gz 
 
-echo "fixing .bval file to include b=0 as first volume"
-sed -i '' 's/^1000/0/' dwi.bval
+echo "creating new .bval file to include b=0 as first volume with 15 total volumes"
+echo "0 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000 1000" >> dwi.bval
+
+echo "fixing .bval file to include only 15 volumes by removing final column"
+awk '{
+  for (i = 1; i <= 15 && i <= NF; i++)
+    printf "%s%s", $i, (i < 15 && i < NF ? OFS : "")
+  printf "\n"
+}' ${1}_ses-03_dwi.bvec > dwi.bvec
 
 echo "fix gradients using MRtrix3 dwigradcheck function"
 dwigradcheck dwi.nii.gz -fslgrad dwi.bvec dwi.bval -export_grad_fsl dwi_gradcheck.bvec dwi_gradcheck.bval 
