@@ -6,11 +6,11 @@
 # See data/site-330/README for affected subjects
 # run this as ./fix_site330_ADCvols.sh [subject-id]
 
-cd $elgan_dti/data/site-330
+cd $elgan_dti/data/site-330/${1}/ses-03/dwi
 
-mrconvert ${1}/ses-03/dwi/${1}_ses-03_dwi.nii.gz -coord 3 1:15 ${1}/ses-03/dwi/dwi.nii.gz -fslgrad ${1}/ses-03/dwi/${1}_ses-03_dwi.bvec ${1}/ses-03/dwi/${1}_ses-03_dwi.bval -export_grad_fsl ${1}/ses-03/dwi/dwi.bvec ${1}/ses-03/dwi/dwi.bval --force
-dwigradcheck ${1}/ses-03/dwi/dwi.nii.gz -fslgrad ${1}/ses-03/dwi/dwi.bvec ${1}/ses-03/dwi/dwi.bval -export_grad_fsl ${1}/ses-03/dwi/dwi_gradcheck.bvec ${1}/ses-03/dwi/dwi_gradcheck.bval 
-dwi2mask ${1}/ses-03/dwi/dwi.nii.gz ${1}/ses-03/dwi/mask.nii.gz
-tckgen -algorithm tensor_det ${1}/ses-03/dwi/${1}_ses-03_dwi.nii.gz -fslgrad ${1}/ses-03/dwi/dwi_gradcheck.bvec ${1}/ses-03/dwi/dwi_gradcheck.bval -mask ${1}/ses-03/dwi/mask.nii.gz -seed_image ${1}/ses-03/dwi/mask.nii.gz -select 10k wb_tracts_10k.tck
+mrconvert ${1}_ses-03_dwi.nii.gz -coord 3 1:15 dwi.nii.gz -fslgrad ${1}_ses-03_dwi.bvec ${1}_ses-03_dwi.bval -export_grad_fsl dwi.bvec dwi.bval --force
+dwigradcheck dwi.nii.gz -fslgrad dwi.bvec dwi.bval -export_grad_fsl dwi_gradcheck.bvec dwi_gradcheck.bval 
+dwi2mask dwi.nii.gz mask.nii.gz
+tckgen -algorithm tensor_det ${1}_ses-03_dwi.nii.gz -fslgrad dwi_gradcheck.bvec dwi_gradcheck.bval -mask mask.nii.gz -seed_image mask.nii.gz -select 10k wb_tracts_10k.tck
 echo "check output tractogram, rename dwi files and delete extra files" 
 
