@@ -28,7 +28,7 @@ echo "create a rough brain mask for gradient check and tractography"
 dwi2mask dwi.nii.gz mask.nii.gz -fslgrad dwi_gradcheck.bvec dwi_gradcheck.bval
 
 echo "create rough tractogram for visual inspection"
-tckgen -algorithm tensor_det ${1}_ses-03_dwi.nii.gz -fslgrad dwi_gradcheck.bvec dwi_gradcheck.bval -mask mask.nii.gz -seed_image mask.nii.gz -select 10k wb_tracts_10k.tck
+tckgen -algorithm tensor_det dwi.nii.gz -fslgrad dwi_gradcheck.bvec dwi_gradcheck.bval -mask mask.nii.gz -seed_image mask.nii.gz -select 10k wb_tracts_10k.tck
 
 echo "check output tractogram, rename dwi files and delete extra files" 
 
