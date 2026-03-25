@@ -16,7 +16,7 @@ afq = GroupAFQ(
 
 
 # Remove old segmentation outputs only
-afq.clobber(dependent_on="recog")
+afq.cmd_outputs(dependent_on="recog")
 
 
 # Recompute segmentation and subsequent steps
