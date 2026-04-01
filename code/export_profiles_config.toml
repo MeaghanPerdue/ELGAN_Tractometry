@@ -1,0 +1,10 @@
+# Config file used for group tract profile export
+# used by export_tract_profiles_docker.sh
+
+[bids]
+bids_dir = "/bids"
+derivatives = ["afq"]
+
+[export]
+group = true
+tract_profiles = true
