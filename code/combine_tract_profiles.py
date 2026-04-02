@@ -23,6 +23,9 @@ for f in csvs:
     # Read CSV
     df = pd.read_csv(f)
 
+    # Drop unwanted index column if present
+    df = df.drop(columns=["Unnamed: 0"], errors="ignore")
+
     # Insert subjectID and sessionID columns at the front
     df.insert(0, "sessionID", session)
     df.insert(0, "subjectID", subject)
@@ -33,11 +36,7 @@ for f in csvs:
 # Concatenate all subjects/sessions
 group_df = pd.concat(dfs, ignore_index=True)
 
-# Output directory
-out_dir = afq_dir / "group"
-out_dir.mkdir(exist_ok=True)
-
-out_file = out_dir / "tract_profiles.csv"
+out_file = afq_dir / "tract_profiles.csv"
 group_df.to_csv(out_file, index=False)
 
 print(f"Wrote group tract profiles to: {out_file}")
