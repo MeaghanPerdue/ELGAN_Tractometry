@@ -21,7 +21,7 @@ apptainer run --containall --writable-tmpfs --nv \
         -B $HOME/elgan_dti/code:/code,$HOME/elgan_dti/data:/bids,$HOME/elgan_dti/data/derivatives/qsiprep:/out,/tmp:/tmp,license.txt:/opt/freesurfer/license.txt \
         qsiprep-v1.0.1.sif \
         /bids /out participant \
-        -w /tmp \
+        -w /tmp/${i} \
         --fs-license-file /opt/freesurfer/license.txt \
         --skip-bids-validation \
         --participant-label $i \
