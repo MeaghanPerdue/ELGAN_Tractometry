@@ -26,6 +26,8 @@ Usage
 
     Folders must be supplied in priority order (earliest/canonical first).
 
+    I run this from within the derivatives folder so arguments are easy and report and script are output there.
+
 Options
 -------
     --output    Path for the generated shell script  [default: dedup_symlinks.sh]
