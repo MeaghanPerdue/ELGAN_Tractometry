@@ -18,7 +18,7 @@ def parse_args():
         help=(
             "Path to the AFQ derivatives directory, relative to "
             "/Volumes/LaCie/Projects/elgan_dti/data "
-            "(e.g. site-150/ELGAN/derivatives/afq)"
+            "(e.g. site-150/derivatives/afq)"
         ),
     )
     return parser.parse_args()
