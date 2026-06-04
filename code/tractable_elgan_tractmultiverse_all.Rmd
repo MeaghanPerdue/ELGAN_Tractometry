@@ -254,9 +254,39 @@ df_qc<- elgan_afq_prob %>%
 
 write.csv(df_qc, "/Volumes/LaCie/Projects/elgan_dti/data/qsiprep_qc_combined_vendor_site.csv", row.names=FALSE)
       
-lm(CNR0_mean ~ vendor, data=df_qc)
-        
-summary(lm(CNR0_mean ~ vendor, data=df_qc))
+# Run ANOVA by Vendor
+
+summary(aov(CNR0_mean ~ vendor, data=df_qc))
+
+## post-hoc pairwise tests
+TukeyHSD(aov(CNR0_mean ~ vendor, data=df_qc))
+
+plot(TukeyHSD(aov(CNR0_mean ~ vendor, data=df_qc)))
+
+summary(aov(CNR1_mean ~ vendor, data=df_qc))
+
+## post-hoc pairwise tests
+TukeyHSD(aov(CNR1_mean ~ vendor, data=df_qc))
+
+summary(aov(mean_fd ~ vendor, data=df_qc))
+
+summary(aov(mean_fd ~ vendor, data=df_qc))
+
+# Run ANOVA by Site
+summary(aov(CNR0_mean ~ site, data=df_qc))
+
+## post hoc tests
+TukeyHSD(aov(CNR0_mean ~ site, data=df_qc))
+
+
+summary(aov(CNR1_mean ~ site, data=df_qc))
+
+summary(aov(mean_fd ~ site, data=df_qc))
+
+
+
+
+
 
 ```
 
