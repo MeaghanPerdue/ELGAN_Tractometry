@@ -1,0 +1,611 @@
+---
+title: "Tractable Test"
+output: html_notebook
+---
+
+Tractable GAMs on pyAFQ tractometry outputs with Elgan3 UMMS data
+
+## Compile and summarize demographic data
+```{r demographics}
+library(tidyverse)
+library(psych)
+
+sublist<-read.csv("/Volumes/LaCie/Projects/elgan_dti/data/afq_include.csv")
+
+demog<-read.csv("/Volumes/LaCie/Projects/elgan_dti/data/mergedcorrecteddata_cleaned_MP.csv") %>%
+  select("sid", "bw", "sex", "female", "ivhx", "gadays", "plurality", "multip", "dx120_4_asd",	"dx120_5_cp", "epil", "iq85")
+
+demog2<-read.csv("/Volumes/LaCie/Projects/elgan_dti/data/elgan_demog_data.csv") %>%
+  select("sid", "develop", "AgeDecimalYRDIF", "FSIQ2", "srs15")
+colnames(demog2)<-c("sid", "develop", "mri_age", "FSIQ2", "srs15")
+
+tmp<-left_join(sublist, demog, by="sid")
+
+subinfo<-left_join(tmp, demog2, by="sid")
+
+# combine diagnosis variables
+
+subinfo <- subinfo |>
+  mutate(ndd = as.integer(
+    (dx120_4_asd > 0 & !is.na(dx120_4_asd)) | 
+    (dx120_5_cp  > 0 & !is.na(dx120_5_cp))  | 
+    (epil        > 0 & !is.na(epil)) |
+    (iq85        > 0 & !is.na(iq85))  
+  ))
+
+subinfo <- subinfo |>
+  mutate(lowiq = as.integer(
+    (FSIQ2 <70 & !is.na(FSIQ2)) 
+  ))
+
+
+## create median split variables
+
+# Calculate the median of 'ga_days', excluding NAs
+median_bw <- median(subinfo$bw, na.rm = TRUE)
+
+# Create the 'bw_group' column
+subinfo$bw_group <- ifelse(is.na(subinfo$bw), NA, ifelse(subinfo$bw > median_bw, "High", "Low"))
+
+# Optionally convert to factor
+subinfo$bw_group <- factor(subinfo$bw_group, levels = c("Low", "High"))
+
+# Calculate the median of 'ga_days', excluding NAs
+median_ga <- median(subinfo$gadays, na.rm = TRUE)
+
+# Create the 'ga_group' column
+subinfo$ga_group <- ifelse(subinfo$gadays > median_ga, "High", "Low")
+
+# Create IQ split variable at 85
+subinfo$IQunder85 <- ifelse(subinfo$FSIQ2 < 85, "Low", "Avg")
+
+
+## describe data
+
+subinfo %>% count(female)
+subinfo %>% count(ndd)
+subinfo %>% count(lowiq)
+subinfo %>% count(ivhx)
+subinfo %>% count(IQunder85)
+subinfo %>% count(iq85) # coded from mergedandcorrected data sheet
+
+describe(subinfo)
+
+```
+
+# Load data - AFQ waypoints tracts
+
+```{r}
+
+library(tidyverse)
+
+# Define base path and site IDs
+base_path <- "/Volumes/LaCie/Projects/elgan_dti/data"
+sites <- c("site-120", "site-130", "site-140", "site-150", "site-160",
+           "site-170", "site-220", "site-230", "site-310", "site-320", "site-330")
+
+# Build file paths
+tract_profile_paths <- file.path(base_path, sites, "derivatives", "afq", "tract_profiles.csv")
+
+# Name the vector so site labels are preserved
+names(tract_profile_paths) <- sites
+
+# Vendor lookup
+vendor_map <- c(
+  "site-120" = "Siemens",
+  "site-130" = "Siemens",
+  "site-140" = "Siemens",      
+  "site-150" = "Philips",
+  "site-160" = "Philips",
+  "site-170" = "Siemens",
+  "site-220" = "Siemens",
+  "site-230" = "Siemens",
+  "site-310" = "GE",
+  "site-320" = "GE",
+  "site-330" = "Philips"
+)
+
+# Read and combine, adding 'site' and 'vendor' columns
+tract_profiles_combined <- tract_profile_paths |>
+  map(\(path) {
+    if (file.exists(path)) {
+      read_csv(path, show_col_types = FALSE, col_types = cols(.default = "c"))
+    } else {
+      warning(paste("File not found:", path))
+      NULL
+    }
+  }) |>
+  compact() |>
+  list_rbind(names_to = "site") |>
+  mutate(vendor = vendor_map[site]) |>
+  type_convert()
+
+# Preview
+glimpse(tract_profiles_combined)
+
+# Add demographic data to tract profiles
+elgan_afq_prob<-inner_join(tract_profiles_combined, subinfo, by = "subjectID")
+
+# read in QSIprep QC data and select relevant columns
+qc<-read.csv(file.path(base_path, "qsiprep_qc_combined.csv")) %>%
+  mutate(
+    subjectID = str_remove(subjectID, "^sub-"),
+    sessionID = str_remove(sessionID, "^ses-")
+  )
+
+# add QC data to tract profiles
+elgan_afq_prob<-inner_join(elgan_afq_prob, qc, by = "subjectID")
+
+# Write compiled data to csv file
+write.csv(elgan_afq_prob,"/Volumes/LaCie/Projects/elgan_dti/data/ELGAN_afq_prob_all.csv", row.names=FALSE)
+
+# Load database for analysis
+elgan_afq_prob <- read.csv("/Volumes/LaCie/Projects/elgan_dti/data/ELGAN_afq_prob_all.csv") %>%
+    mutate(across(c(subjectID, sex, ndd, lowiq, female, site, vendor, ivhx, IQunder85, iq85, ga_group, bw_group), as.factor)) |>
+  mutate(across(c(dti_fa, dti_md), as.numeric))
+
+elgan_afq_prob <- elgan_afq_prob %>%
+  mutate(across(c(subjectID, sex, ndd, lowiq, female, site, vendor, ivhx, IQunder85, iq85, ga_group, bw_group), as.factor)) |>
+  mutate(across(c(dti_fa, dti_md), as.numeric))
+
+
+```
+
+
+
+
+## Exclude bad tracts
+Filter out tracts that were deemed 'poor' based on visual QC
+This is totally subjective so consider alternative more objective methods of QC by including parameters from QSIprep/eddy QC outputs
+```{r exclude tracts}
+
+# Read the inclusion spreadsheet
+tract_include_paths <- file.path(base_path, sites, "derivatives", "afq_include_by_tract.csv")
+
+# Read and combine, adding 'site' and 'vendor' columns
+tract_include_combined <- tract_include_paths |>
+  map(\(path) {
+    if (file.exists(path)) {
+      read_csv(path, show_col_types = FALSE, col_types = cols(.default = "c"))
+    } else {
+      warning(paste("File not found:", path))
+      NULL
+    }
+  }) |>
+  compact() |>
+  list_rbind(names_to = "site")
+
+tract_include_combined <- tract_include_combined |>
+  mutate(across(c(subjectID, sessionID), as.factor)) 
+
+# Join and filter out excluded subject-tract pairs
+elgan_afq_prob_cleantracts <- elgan_afq_prob |>
+  left_join(
+    tract_include_combined |> select(subjectID, sessionID, tractID, include_tract_prob),
+    by = c("subjectID", "sessionID", "tractID")
+  ) |>
+  filter(include_tract_prob == 1) |>
+  select(-include_tract_prob)
+
+elgan_afq_prob_cleantracts <- elgan_afq_prob_cleantracts |>
+  mutate(across(c(subjectID, sex, ndd, lowiq, female, site, vendor, ivhx, IQunder85, ga_group, bw_group), as.factor)) |>
+  mutate(across(c(dti_fa, dti_md), as.numeric))
+
+```
+
+
+# Plot Profiles 
+
+## Compare tract profiles by vendor
+```{r fa by vendor}
+library(tractable)
+
+plot_fa_by_vendor_clean <- plot_tract_profiles(
+  df = elgan_afq_prob_cleantracts,
+  y = c("dti_fa"),
+  tracts = c("Callosum Anterior Frontal", "Callosum Superior Frontal", "Callosum Motor", "Callosum Superior Parietal", "Callosum Posterior Parietal", "Callosum Occipital", "Left Corticospinal", "Right Corticospinal", "Left Cingulum Cingulate", "Right Cingulum Cingulate","Left Anterior Thalamic", "Right Anterior Thalamic", "Left Inferior Longitudinal", "Right Inferior Longitudinal", "Left Inferior Fronto-occipital", "Right Inferior Fronto-occipital", "Left Superior Longitudinal", "Right Superior Longitudinal", "Left Arcuate", "Right Arcuate"),
+  group_col = "vendor",
+  group_pal = "cbb",
+  save_figure = FALSE)
+plot_fa_by_vendor_clean
+
+cc_sup_frontal_fa_by_vendor <- tractable_single_tract(
+    df         = elgan_afq_prob_cleantracts,
+    tract      = "Callosum Superior Frontal",
+    target     = "dti_fa",
+    regressors = c("mri_age", "female", "vendor"),
+    node_group = "vendor"
+)
+
+summary(cc_sup_frontal_fa_by_vendor)
+
+
+cc_post_parietal_fa_by_vendor <- tractable_single_tract(
+    df         = elgan_afq_prob_cleantracts,
+    tract      = "Callosum Posterior Parietal",
+    target     = "dti_fa",
+    regressors = c("mri_age", "female", "vendor"),
+    node_group = "vendor"
+)
+
+summary(cc_post_parietal_fa_by_vendor)
+
+
+
+plot_fa_by_site <- plot_tract_profiles(
+  df = elgan_afq_prob,
+  y = c("dti_fa"),
+  tracts = c("Callosum Orbital", "Callosum Anterior Frontal", "Callosum Superior Frontal", "Callosum Motor", "Callosum Superior Parietal", "Callosum Posterior Parietal", "Callosum Occipital", "Left Corticospinal", "Right Corticospinal", "Left Cingulum Cingulate", "Right Cingulum Cingulate","Left Anterior Thalamic", "Right Anterior Thalamic", "Left Inferior Longitudinal", "Right Inferior Longitudinal", "Left Inferior Fronto-occipital", "Right Inferior Fronto-occipital", "Left Superior Longitudinal", "Right Superior Longitudinal", "Left Arcuate", "Right Arcuate"),
+  group_col = "site",
+  group_pal = "cbb",
+  save_figure = FALSE)
+plot_fa_by_site
+
+
+```
+### What underlies the vendor differences? 
+Check QC and acquisition parameter differences between vendors using ANOVA
+
+```{r}
+## reduce dataframe to relevant columns with 1 row per subject
+df_qc<- elgan_afq_prob %>% 
+          select("subjectID", "vendor", "site", 31:89) %>%
+          distinct()
+
+write.csv(df_qc, "/Volumes/LaCie/Projects/elgan_dti/data/qsiprep_qc_combined_vendor_site.csv", row.names=FALSE)
+      
+lm(CNR0_mean ~ vendor, data=df_qc)
+        
+summary(lm(CNR0_mean ~ vendor, data=df_qc))
+
+```
+
+
+## Compare tract profiles by sex
+```{r plot by sex}
+library(tractable)
+
+plot_fa_by_sex <- plot_tract_profiles(
+  df = elgan_afq_prob,
+  y = c("dti_fa"),
+  tracts = c("Callosum Orbital", "Callosum Anterior Frontal", "Callosum Superior Frontal", "Callosum Motor", "Callosum Superior Parietal", "Callosum Posterior Parietal", "Callosum Occipital", "Left Corticospinal", "Right Corticospinal", "Left Cingulum Cingulate", "Right Cingulum Cingulate","Left Anterior Thalamic", "Right Anterior Thalamic", "Left Inferior Longitudinal", "Right Inferior Longitudinal", "Left Inferior Fronto-occipital", "Right Inferior Fronto-occipital", "Left Superior Longitudinal", "Right Superior Longitudinal", "Left Arcuate", "Right Arcuate"),
+  group_col = "female",
+  group_pal = "cbb",
+  save_figure = FALSE)
+plot_fa_by_sex
+
+plot_fa_by_sex_clean <- plot_tract_profiles(
+  df = elgan_afq_prob_cleantracts,
+  y = c("dti_fa"),
+  tracts = c("Callosum Anterior Frontal", "Callosum Superior Frontal", "Callosum Motor", "Callosum Superior Parietal", "Callosum Posterior Parietal", "Callosum Occipital", "Left Corticospinal", "Right Corticospinal", "Left Cingulum Cingulate", "Right Cingulum Cingulate","Left Anterior Thalamic", "Right Anterior Thalamic", "Left Inferior Longitudinal", "Right Inferior Longitudinal", "Left Inferior Fronto-occipital", "Right Inferior Fronto-occipital", "Left Superior Longitudinal", "Right Superior Longitudinal", "Left Arcuate", "Right Arcuate"),
+  group_col = "female",
+  group_pal = "cbb",
+  save_figure = FALSE)
+plot_fa_by_sex_clean
+
+
+cc_post_parietal_fa_by_sex <- tractable_single_tract(
+    df         = elgan_afq_prob_cleantracts,
+    tract      = "Left Cingulum Cingulate",
+    target     = "dti_fa",
+    regressors = c("mri_age", "vendor", "female"),
+    node_group = "female"
+)
+
+summary(cc_post_parietal_fa_by_sex)
+
+
+```
+
+## Plot Profiles by Birthweight
+```{r plot by bw}
+
+plot_fa_by_bw <- plot_tract_profiles(
+  df = elgan_afq_prob,
+  y = c("dti_fa"),
+  tracts = c("Callosum Orbital", "Callosum Anterior Frontal", "Callosum Superior Frontal", "Callosum Motor", "Callosum Superior Parietal", "Callosum Posterior Parietal", "Callosum Occipital", "Left Corticospinal", "Right Corticospinal", "Left Cingulum Cingulate", "Right Cingulum Cingulate","Left Anterior Thalamic", "Right Anterior Thalamic", "Left Inferior Longitudinal", "Right Inferior Longitudinal", "Left Inferior Fronto-occipital", "Right Inferior Fronto-occipital", "Left Superior Longitudinal", "Right Superior Longitudinal", "Left Arcuate", "Right Arcuate"),
+  group_col = "bw_group",
+  group_pal = "cbb",
+  save_figure = FALSE)
+plot_fa_by_bw
+
+plot_fa_by_bw_clean <- plot_tract_profiles(
+  df = elgan_afq_prob_cleantracts,
+  y = c("dti_fa"),
+  tracts = c("Callosum Anterior Frontal", "Callosum Superior Frontal", "Callosum Motor", "Callosum Superior Parietal", "Callosum Posterior Parietal", "Callosum Occipital", "Left Corticospinal", "Right Corticospinal", "Left Cingulum Cingulate", "Right Cingulum Cingulate","Left Anterior Thalamic", "Right Anterior Thalamic", "Left Inferior Longitudinal", "Right Inferior Longitudinal", "Left Inferior Fronto-occipital", "Right Inferior Fronto-occipital", "Left Superior Longitudinal", "Right Superior Longitudinal", "Left Arcuate", "Right Arcuate"),
+  group_col = "bw_group",
+  group_pal = "cbb",
+  save_figure = FALSE)
+plot_fa_by_bw_clean
+
+
+
+# test FA by birthweight 
+left_cingulum_fa_by_bw <- tractable_single_tract(
+    df         = elgan_afq_prob_cleantracts,
+    tract      = "Left Cingulum Cingulate",
+    target     = "dti_fa",
+    regressors = c("mri_age", "vendor", "female", "bw_group"),
+    node_group = "bw_group"
+)
+
+summary(left_cingulum_fa_by_bw)
+
+```
+
+
+## Plot Profiles by Gestational Age
+```{r plot by ga}
+
+plot_fa_by_ga <- plot_tract_profiles(
+  df = elgan_afq_prob,
+  y = c("dti_fa"),
+  tracts = c("Callosum Anterior Frontal", "Callosum Superior Frontal", "Callosum Motor", "Callosum Superior Parietal", "Callosum Posterior Parietal", "Callosum Occipital", "Left Corticospinal", "Right Corticospinal", "Left Cingulum Cingulate", "Right Cingulum Cingulate","Left Anterior Thalamic", "Right Anterior Thalamic", "Left Inferior Longitudinal", "Right Inferior Longitudinal", "Left Inferior Fronto-occipital", "Right Inferior Fronto-occipital", "Left Superior Longitudinal", "Right Superior Longitudinal", "Left Arcuate", "Right Arcuate"),
+  group_col = "ga_group",
+  group_pal = "cbb",
+  save_figure = FALSE)
+plot_fa_by_ga
+
+# test FA by GA all tracts 
+cc_sup_parietal_fa_by_ga <- tractable_single_tract(
+    df         = elgan_afq_prob,
+    tract      = "Callosum Superior Parietal",
+    target     = "dti_fa",
+    regressors = c("mri_age", "vendor", "female", "ga_group"),
+    node_group = "ga_group"
+)
+summary(cc_sup_parietal_fa_by_ga)
+
+## add QC covariates - CNR
+cc_sup_parietal_fa_by_ga_cnr <- tractable_single_tract(
+    df         = elgan_afq_prob,
+    tract      = "Callosum Superior Parietal",
+    target     = "dti_fa",
+    regressors = c("ga_group", "CNR0_mean"),
+    node_group = "ga_group"
+)
+summary(cc_sup_parietal_fa_by_ga_cnr)
+
+## use data with selected tracts removed based on visual QC
+plot_fa_by_ga_clean <- plot_tract_profiles(
+  df = elgan_afq_prob_cleantracts,
+  y = c("dti_fa"),
+  tracts = c("Callosum Anterior Frontal", "Callosum Superior Frontal", "Callosum Motor", "Callosum Superior Parietal", "Callosum Posterior Parietal", "Callosum Occipital", "Left Corticospinal", "Right Corticospinal", "Left Cingulum Cingulate", "Right Cingulum Cingulate","Left Anterior Thalamic", "Right Anterior Thalamic", "Left Inferior Longitudinal", "Right Inferior Longitudinal", "Left Inferior Fronto-occipital", "Right Inferior Fronto-occipital", "Left Superior Longitudinal", "Right Superior Longitudinal", "Left Arcuate", "Right Arcuate"),
+  group_col = "ga_group",
+  group_pal = "cbb",
+  save_figure = FALSE)
+plot_fa_by_ga_clean
+
+# test FA by GA cleantracts
+cc_sup_parietal_fa_by_ga <- tractable_single_tract(
+    df         = elgan_afq_prob_cleantracts,
+    tract      = "Callosum Superior Parietal",
+    target     = "dti_fa",
+    regressors = c("mri_age", "vendor", "female", "ga_group"),
+    node_group = "ga_group"
+)
+
+summary(cc_sup_parietal_fa_by_ga)
+
+
+```
+
+## Plot Profiles by Intraventricular Hemm.
+```{r plot by ivh}
+
+plot_fa_by_ivh <- plot_tract_profiles(
+  df = elgan_afq_prob,
+  y = c("dti_fa"),
+  tracts = c("Callosum Orbital", "Callosum Anterior Frontal", "Callosum Superior Frontal", "Callosum Motor", "Callosum Superior Parietal", "Callosum Posterior Parietal", "Callosum Occipital", "Left Corticospinal", "Right Corticospinal", "Left Cingulum Cingulate", "Right Cingulum Cingulate","Left Anterior Thalamic", "Right Anterior Thalamic", "Left Inferior Longitudinal", "Right Inferior Longitudinal", "Left Inferior Fronto-occipital", "Right Inferior Fronto-occipital", "Left Superior Longitudinal", "Right Superior Longitudinal", "Left Arcuate", "Right Arcuate"),
+  group_col = "ivhx",
+  group_pal = "cbb",
+  save_figure = FALSE)
+plot_fa_by_ivh
+
+plot_fa_by_ivh_clean <- plot_tract_profiles(
+  df = elgan_afq_prob_cleantracts,
+  y = c("dti_fa"),
+  tracts = c("Callosum Anterior Frontal", "Callosum Superior Frontal", "Callosum Motor", "Callosum Superior Parietal", "Callosum Posterior Parietal", "Callosum Occipital", "Left Corticospinal", "Right Corticospinal", "Left Cingulum Cingulate", "Right Cingulum Cingulate","Left Anterior Thalamic", "Right Anterior Thalamic", "Left Inferior Longitudinal", "Right Inferior Longitudinal", "Left Inferior Fronto-occipital", "Right Inferior Fronto-occipital", "Left Superior Longitudinal", "Right Superior Longitudinal", "Left Arcuate", "Right Arcuate"),
+  group_col = "ivhx",
+  group_pal = "cbb",
+  save_figure = FALSE)
+plot_fa_by_ivh_clean
+
+supfrontCC_fa_by_ga <- tractable_single_tract(
+    df         = elgan_afq_prob,
+    tract      = "Callosum Superior Frontal",
+    target     = "dti_fa",
+    regressors = c("mri_age", "site", "ga_group"),
+    node_group = "ga_group",
+    k          = "auto"
+)
+
+summary(supfrontCC_fa_by_ga)
+
+
+```
+
+
+## Plot Profiles by IQ <>85
+```{r plot by iq}
+#subset dataframe with IQ data
+elgan_afq_prob_iq <- elgan_afq_prob_cleantracts %>% 
+                        filter(!is.na(iq85)) 
+elgan_afq_prob_iq <- elgan_afq_prob_iq |>
+  mutate(across(c(subjectID, sex, ndd, lowiq, female, site, vendor, ivhx, iq85, ga_group, bw_group), as.factor)) |>
+  mutate(across(c(dti_fa, dti_md), as.numeric))                        
+
+
+
+
+plot_fa_by_iq_clean <- plot_tract_profiles(
+  df = elgan_afq_prob_iq,
+  y = c("dti_fa"),
+  tracts = c("Callosum Anterior Frontal", "Callosum Superior Frontal", "Callosum Motor", "Callosum Superior Parietal", "Callosum Posterior Parietal", "Callosum Occipital", "Left Corticospinal", "Right Corticospinal", "Left Cingulum Cingulate", "Right Cingulum Cingulate","Left Anterior Thalamic", "Right Anterior Thalamic", "Left Inferior Longitudinal", "Right Inferior Longitudinal", "Left Inferior Fronto-occipital", "Right Inferior Fronto-occipital", "Left Superior Longitudinal", "Right Superior Longitudinal", "Left Arcuate", "Right Arcuate"),
+  group_col = "iq85",
+  group_pal = "cbb",
+  save_figure = FALSE)
+plot_fa_by_iq_clean
+
+
+
+# test group dif in CC post-parietal
+cc_sup_parietal_fa_by_IQ <- tractable_single_tract(
+    df         = elgan_afq_prob_iq,
+    tract      = "Callosum Superior Parietal",
+    target     = "dti_fa",
+    regressors = c("mri_age", "vendor", "female", "iq85"),
+    node_group = "iq85"
+)
+
+summary(cc_sup_parietal_fa_by_IQ)
+
+
+# add random effect of site
+cc_sup_parietal_fa_by_IQ_REsite <- tractable_single_tract(
+    df         = elgan_afq_prob_iq,
+    tract      = "Callosum Posterior Parietal",
+    target     = "dti_fa",
+    regressors = c("mri_age", "vendor", "female", "iq85",
+                   "s(site, bs = 're')"),
+    node_group = "iq85"
+)
+
+summary(cc_post_parietal_fa_by_IQ_REsite)
+
+
+# loop GAMM over all tracts
+library(purrr)
+
+tracts <- c(
+  "Callosum Anterior Frontal", "Callosum Superior Frontal",
+  "Callosum Motor", "Callosum Superior Parietal",
+  "Callosum Posterior Parietal", "Callosum Occipital",
+  "Left Corticospinal", "Right Corticospinal",
+  "Left Cingulum Cingulate", "Right Cingulum Cingulate",
+  "Left Anterior Thalamic", "Right Anterior Thalamic",
+  "Left Inferior Longitudinal", "Right Inferior Longitudinal",
+  "Left Inferior Fronto-occipital", "Right Inferior Fronto-occipital",
+  "Left Superior Longitudinal", "Right Superior Longitudinal",
+  "Left Arcuate", "Right Arcuate"
+)
+
+fa_iq_models <- tracts |>
+  set_names() |>
+  map(\(tract) {
+    message("Fitting: ", tract)
+    tractable_single_tract(
+      df         = elgan_afq_prob_iq,
+      tract      = tract,
+      target     = "dti_fa",
+      regressors = c("mri_age", "vendor", "female", "iq85"),
+      node_group = "iq85"
+    )
+  })
+#To get the summary for any tract: summary(fa_iq_models[["Left Arcuate"]])
+
+summary(fa_iq_models[["Callosum Superior Parietal"]])
+
+
+
+```
+
+## Plot Profiles by NDD
+```{r plot by ndd}
+#subset dataframe with ndd data
+elgan_afq_prob_ndd <- elgan_afq_prob %>% 
+                        filter(!is.na(ndd))
+
+
+plot_fa_by_ndd_clean <- plot_tract_profiles(
+  df = elgan_afq_prob_cleantracts,
+  y = c("dti_fa"),
+  tracts = c("Callosum Anterior Frontal", "Callosum Superior Frontal", "Callosum Motor", "Callosum Superior Parietal", "Callosum Posterior Parietal", "Callosum Occipital", "Left Corticospinal", "Right Corticospinal", "Left Cingulum Cingulate", "Right Cingulum Cingulate","Left Anterior Thalamic", "Right Anterior Thalamic", "Left Inferior Longitudinal", "Right Inferior Longitudinal", "Left Inferior Fronto-occipital", "Right Inferior Fronto-occipital", "Left Superior Longitudinal", "Right Superior Longitudinal", "Left Arcuate", "Right Arcuate"),
+  group_col = "ndd",
+  group_pal = "cbb",
+  save_figure = FALSE)
+plot_fa_by_ndd_clean
+
+
+```
+
+
+### FDR correction for FSIQ models
+```{r FDR corr}
+tracts<-c("CC Anterior Frontal", "CC Motor", "CC Occipital", "CC Orbital", "CC Posterior Parietal", "CC Superior Frontal", "CC Superior Parietal","Left Anterior Thalamic", "Right Anterior Thalamic", "Left Arcuate", "Right Arcuate", "Left Cingulum", "Right Cingulum", "Left Corticospinal", "Right Corticospinal", "Left Inferior Fronto-Occipital", "Right Inferior Fronto-Occipital", "Left Inferior Longitudinal", "Right Inferior Longitudinal", "Left Superior Longitudinal", "Right Superior Longitudinal")
+
+fitcoef<-c(CCant_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          CCmot_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          CCocc_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          CCorb_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          CCpostp_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          CCsupf_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          CCsuppar_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          LATh_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          RATh_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          LAF_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          RAF_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          LCing_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          RCing_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          LCST_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          RCST_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          LIFO_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          RIFO_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          LILF_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          RILF_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          LSLF_iq_summary[["p.coeff"]][["fsiq_low1"]], 
+          RSLF_iq_summary[["p.coeff"]][["fsiq_low1"]])
+
+tvals<-c(CCant_iq_summary[["p.t"]][["fsiq_low1"]],
+          CCmot_iq_summary[["p.t"]][["fsiq_low1"]],
+          CCocc_iq_summary[["p.t"]][["fsiq_low1"]],
+          CCorb_iq_summary[["p.t"]][["fsiq_low1"]],
+          CCpostp_iq_summary[["p.t"]][["fsiq_low1"]],
+          CCsupf_iq_summary[["p.t"]][["fsiq_low1"]],
+          CCsuppar_iq_summary[["p.t"]][["fsiq_low1"]],
+          LATh_iq_summary[["p.t"]][["fsiq_low1"]],
+          RATh_iq_summary[["p.t"]][["fsiq_low1"]],
+          LAF_iq_summary[["p.t"]][["fsiq_low1"]],
+          RAF_iq_summary[["p.t"]][["fsiq_low1"]],
+          LCing_iq_summary[["p.t"]][["fsiq_low1"]],
+          RCing_iq_summary[["p.t"]][["fsiq_low1"]],
+          LCST_iq_summary[["p.t"]][["fsiq_low1"]],
+          RCST_iq_summary[["p.t"]][["fsiq_low1"]],
+          LIFO_iq_summary[["p.t"]][["fsiq_low1"]],
+          RIFO_iq_summary[["p.t"]][["fsiq_low1"]],
+          LILF_iq_summary[["p.t"]][["fsiq_low1"]],
+          RILF_iq_summary[["p.t"]][["fsiq_low1"]],
+          LSLF_iq_summary[["p.t"]][["fsiq_low1"]], 
+          RSLF_iq_summary[["p.t"]][["fsiq_low1"]])
+
+pvals<-c( CCant_iq_summary[["p.pv"]][["fsiq_low1"]],
+          CCmot_iq_summary[["p.pv"]][["fsiq_low1"]],
+          CCocc_iq_summary[["p.pv"]][["fsiq_low1"]],
+          CCorb_iq_summary[["p.pv"]][["fsiq_low1"]],
+          CCpostp_iq_summary[["p.pv"]][["fsiq_low1"]],
+          CCsupf_iq_summary[["p.pv"]][["fsiq_low1"]],
+          CCsuppar_iq_summary[["p.pv"]][["fsiq_low1"]],
+          LATh_iq_summary[["p.pv"]][["fsiq_low1"]],
+          RATh_iq_summary[["p.pv"]][["fsiq_low1"]],
+          LAF_iq_summary[["p.pv"]][["fsiq_low1"]],
+          RAF_iq_summary[["p.pv"]][["fsiq_low1"]],
+          LCing_iq_summary[["p.pv"]][["fsiq_low1"]],
+          RCing_iq_summary[["p.pv"]][["fsiq_low1"]],
+          LCST_iq_summary[["p.pv"]][["fsiq_low1"]],
+          RCST_iq_summary[["p.pv"]][["fsiq_low1"]],
+          LIFO_iq_summary[["p.pv"]][["fsiq_low1"]],
+          RIFO_iq_summary[["p.pv"]][["fsiq_low1"]],
+          LILF_iq_summary[["p.pv"]][["fsiq_low1"]],
+          RILF_iq_summary[["p.pv"]][["fsiq_low1"]],
+          LSLF_iq_summary[["p.pv"]][["fsiq_low1"]], 
+          RSLF_iq_summary[["p.pv"]][["fsiq_low1"]])
+
+pfdr<-p.adjust(pvals, method = "fdr", n=length(pvals))
+
+results_iq<-data_frame(tracts, fitcoef, tvals, pvals, pfdr)
+
+write.csv(results_iq, "/Users/meaghan/Library/CloudStorage/OneDrive-UMassChanMedicalSchool/ELGAN/ELGAN_Tractometry/abstracts/ohbm_results.csv")
+
+
+```
+
