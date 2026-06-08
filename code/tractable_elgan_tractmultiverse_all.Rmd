@@ -249,21 +249,17 @@ Check QC and acquisition parameter differences between vendors using ANOVA
 ```{r}
 ## reduce dataframe to relevant columns with 1 row per subject
 df_qc<- elgan_afq_prob %>% 
-          select("subjectID", "vendor", "site", 31:89) %>%
+          select("subjectID", "vendor", "site", "female","iq85", "ga_group", "bw_group", 31:89) %>%
           distinct()
 
 write.csv(df_qc, "/Volumes/LaCie/Projects/elgan_dti/data/qsiprep_qc_combined_vendor_site.csv", row.names=FALSE)
       
 # Run ANOVA by Vendor
 
-summary(aov(CNR0_mean ~ vendor, data=df_qc))
+summary(aov(CNR1_mean ~ vendor, dat=df_qc))
 
-## post-hoc pairwise tests
-TukeyHSD(aov(CNR0_mean ~ vendor, data=df_qc))
-
-plot(TukeyHSD(aov(CNR0_mean ~ vendor, data=df_qc)))
-
-summary(aov(CNR1_mean ~ vendor, data=df_qc))
+ggplot(data=df_qc) +
+  geom_violin(aes(x=vendor, y=CNR1_mean))
 
 ## post-hoc pairwise tests
 TukeyHSD(aov(CNR1_mean ~ vendor, data=df_qc))
@@ -275,17 +271,39 @@ summary(aov(mean_fd ~ vendor, data=df_qc))
 # Run ANOVA by Site
 summary(aov(CNR0_mean ~ site, data=df_qc))
 
-## post hoc tests
-TukeyHSD(aov(CNR0_mean ~ site, data=df_qc))
 
 
-summary(aov(CNR1_mean ~ site, data=df_qc))
+## Mean Framewise Displacement
+summary(aov(mean_fd ~ vendor, dat=df_qc))
 
-summary(aov(mean_fd ~ site, data=df_qc))
+ggplot(data=df_qc) + 
+  geom_boxplot(aes(x=vendor, y=mean_fd)) +
+  theme_classic()
 
+summary(aov(mean_fd ~ site, dat=df_qc))
 
+ggplot(data=df_qc) +
+  geom_boxplot(aes(x=site, y=mean_fd)) +
+  theme_classic()
 
+## Raw number bad slices
+summary(aov(raw_num_bad_slices ~ vendor, dat=df_qc))
 
+ggplot(data=df_qc) + 
+  geom_boxplot(aes(x=vendor, y=raw_num_bad_slices)) +
+  theme_classic()
+
+summary(aov(raw_num_bad_slices ~ site, dat=df_qc))
+
+ggplot(data=df_qc) +
+  geom_boxplot(aes(x=site, y=raw_num_bad_slices)) +
+  theme_classic()
+
+## QC differences by IQ group
+t.test(mean_fd ~ iq85, dat=df_qc) ## NOT SIG
+
+t.test(mean_fd ~ ga_group, dat=df_qc)
+t.test(mean_fd ~ bw_group, dat=df_qc) ## p=.0495
 
 
 ```
@@ -459,7 +477,7 @@ summary(supfrontCC_fa_by_ga)
 ## Plot Profiles by IQ <>85
 ```{r plot by iq}
 #subset dataframe with IQ data
-elgan_afq_prob_iq <- elgan_afq_prob_cleantracts %>% 
+elgan_afq_prob_iq <- elgan_afq_prob %>% 
                         filter(!is.na(iq85)) 
 elgan_afq_prob_iq <- elgan_afq_prob_iq |>
   mutate(across(c(subjectID, sex, ndd, lowiq, female, site, vendor, ivhx, iq85, ga_group, bw_group), as.factor)) |>
@@ -502,6 +520,19 @@ cc_sup_parietal_fa_by_IQ_REsite <- tractable_single_tract(
 )
 
 summary(cc_post_parietal_fa_by_IQ_REsite)
+
+
+## add regressors for QC metrics
+cc_sup_parietal_fa_by_IQ <- tractable_single_tract(
+    df         = elgan_afq_prob_iq,
+    tract      = "Callosum Superior Parietal",
+    target     = "dti_fa",
+    regressors = c("mri_age", "vendor", "female", "iq85", "mean_fd"),
+    node_group = "iq85"
+)
+
+summary(cc_sup_parietal_fa_by_IQ)
+
 
 
 # loop GAMM over all tracts
