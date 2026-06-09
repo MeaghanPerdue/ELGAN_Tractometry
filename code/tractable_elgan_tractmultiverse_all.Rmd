@@ -10,9 +10,11 @@ Tractable GAMs on pyAFQ tractometry outputs with Elgan3 UMMS data
 library(tidyverse)
 library(psych)
 
-sublist<-read.csv("/Volumes/LaCie/Projects/elgan_dti/data/afq_include.csv")
+base_path<-"/Volumes/LaCie/Projects/elgan_dti/data"
 
-demog<-read.csv("/Volumes/LaCie/Projects/elgan_dti/data/mergedcorrecteddata_cleaned_MP.csv") %>%
+sublist<-read.csv(file.path(base_path, "afq_include.csv"))
+
+demog<-read.csv(file.path(base_path, "mergedcorrecteddata_cleaned_MP.csv")) %>%
   select("sid", "bw", "sex", "female", "ivhx", "gadays", "plurality", "multip", "dx120_4_asd",	"dx120_5_cp", "epil", "iq85")
 
 demog2<-read.csv("/Volumes/LaCie/Projects/elgan_dti/data/elgan_demog_data.csv") %>%
@@ -23,7 +25,7 @@ tmp<-left_join(sublist, demog, by="sid")
 
 subinfo<-left_join(tmp, demog2, by="sid")
 
-# combine diagnosis variables
+# combine diagnosis variables based on McNaughton paper method: ASD, CP, Epilepsy, or IQ<85
 
 subinfo <- subinfo |>
   mutate(ndd = as.integer(
@@ -56,10 +58,27 @@ median_ga <- median(subinfo$gadays, na.rm = TRUE)
 # Create the 'ga_group' column
 subinfo$ga_group <- ifelse(subinfo$gadays > median_ga, "High", "Low")
 
-# Create IQ split variable at 85
-subinfo$IQunder85 <- ifelse(subinfo$FSIQ2 < 85, "Low", "Avg")
+
+# read in QSIprep QC data and select relevant columns
+qc<-read.csv(file.path(base_path, "qsiprep_qc_combined.csv")) %>%
+  mutate(
+    subjectID = str_remove(subjectID, "^sub-"),
+    sessionID = str_remove(sessionID, "^ses-")
+  )
+
+# add QC data to subinfo
+subinfo<-left_join(subinfo, qc, by = "subjectID")
+
+# Filter out participants with mean framewise displacement >1mm
+subinfo_filtered<-subinfo %>%
+                    filter(mean_fd<=1)
 
 
+```
+
+
+#Describe Data Participant Characteristics 
+```{r}
 ## describe data
 
 subinfo %>% count(female)
@@ -126,18 +145,6 @@ glimpse(tract_profiles_combined)
 # Add demographic data to tract profiles
 elgan_afq_prob<-inner_join(tract_profiles_combined, subinfo, by = "subjectID")
 
-# read in QSIprep QC data and select relevant columns
-qc<-read.csv(file.path(base_path, "qsiprep_qc_combined.csv")) %>%
-  mutate(
-    subjectID = str_remove(subjectID, "^sub-"),
-    sessionID = str_remove(sessionID, "^ses-")
-  )
-
-# add QC data to tract profiles
-elgan_afq_prob<-inner_join(elgan_afq_prob, qc, by = "subjectID")
-
-# Write compiled data to csv file
-write.csv(elgan_afq_prob,"/Volumes/LaCie/Projects/elgan_dti/data/ELGAN_afq_prob_all.csv", row.names=FALSE)
 
 # Load database for analysis
 elgan_afq_prob <- read.csv("/Volumes/LaCie/Projects/elgan_dti/data/ELGAN_afq_prob_all.csv") %>%
@@ -192,6 +199,16 @@ elgan_afq_prob_cleantracts <- elgan_afq_prob_cleantracts |>
   mutate(across(c(dti_fa, dti_md), as.numeric))
 
 ```
+
+## Filter out subjects with mean framewise displacement > 1mm
+```{r}
+elgan_afq_prob_meanFDcut1<-elgan_afq_prob %>%
+                              filter(mean_fd <= 1)
+
+
+
+```
+
 
 
 # Plot Profiles 
@@ -370,10 +387,10 @@ plot_fa_by_bw_clean
 
 # test FA by birthweight 
 left_cingulum_fa_by_bw <- tractable_single_tract(
-    df         = elgan_afq_prob_cleantracts,
+    df         = elgan_afq_prob,
     tract      = "Left Cingulum Cingulate",
     target     = "dti_fa",
-    regressors = c("mri_age", "vendor", "female", "bw_group"),
+    regressors = c("mri_age", "vendor", "female", "mean_fd", "bw_group"),
     node_group = "bw_group"
 )
 
@@ -426,10 +443,10 @@ plot_fa_by_ga_clean
 
 # test FA by GA cleantracts
 cc_sup_parietal_fa_by_ga <- tractable_single_tract(
-    df         = elgan_afq_prob_cleantracts,
+    df         = elgan_afq_prob,
     tract      = "Callosum Superior Parietal",
     target     = "dti_fa",
-    regressors = c("mri_age", "vendor", "female", "ga_group"),
+    regressors = c("mri_age", "vendor", "female", "mean_fd", "ga_group"),
     node_group = "ga_group"
 )
 
@@ -484,16 +501,22 @@ elgan_afq_prob_iq <- elgan_afq_prob_iq |>
   mutate(across(c(dti_fa, dti_md), as.numeric))                        
 
 
+# from filtered to framewise displacement <=1mm
+elgan_afq_prob_iq <- elgan_afq_prob_meanFDcut1 %>% 
+                        filter(!is.na(iq85)) 
+elgan_afq_prob_iq <- elgan_afq_prob_iq |>
+  mutate(across(c(subjectID, sex, ndd, lowiq, female, site, vendor, ivhx, iq85, ga_group, bw_group), as.factor)) |>
+  mutate(across(c(dti_fa, dti_md), as.numeric)) 
 
 
-plot_fa_by_iq_clean <- plot_tract_profiles(
+plot_fa_by_iq <- plot_tract_profiles(
   df = elgan_afq_prob_iq,
   y = c("dti_fa"),
   tracts = c("Callosum Anterior Frontal", "Callosum Superior Frontal", "Callosum Motor", "Callosum Superior Parietal", "Callosum Posterior Parietal", "Callosum Occipital", "Left Corticospinal", "Right Corticospinal", "Left Cingulum Cingulate", "Right Cingulum Cingulate","Left Anterior Thalamic", "Right Anterior Thalamic", "Left Inferior Longitudinal", "Right Inferior Longitudinal", "Left Inferior Fronto-occipital", "Right Inferior Fronto-occipital", "Left Superior Longitudinal", "Right Superior Longitudinal", "Left Arcuate", "Right Arcuate"),
   group_col = "iq85",
   group_pal = "cbb",
   save_figure = FALSE)
-plot_fa_by_iq_clean
+plot_fa_by_iq
 
 
 
@@ -521,17 +544,29 @@ cc_sup_parietal_fa_by_IQ_REsite <- tractable_single_tract(
 
 summary(cc_post_parietal_fa_by_IQ_REsite)
 
-
-## add regressors for QC metrics
-cc_sup_parietal_fa_by_IQ <- tractable_single_tract(
+# try with site as a fixed effect instead of vendor
+cc_sup_parietal_fa_by_IQ_FEsite <- tractable_single_tract(
     df         = elgan_afq_prob_iq,
     tract      = "Callosum Superior Parietal",
     target     = "dti_fa",
-    regressors = c("mri_age", "vendor", "female", "iq85", "mean_fd"),
+    regressors = c("mri_age", "site", "female", "iq85"),
     node_group = "iq85"
 )
 
-summary(cc_sup_parietal_fa_by_IQ)
+summary(cc_sup_parietal_fa_by_IQ_FEsite)
+
+
+
+## add regressor for mean framewise displacement
+cc_sup_parietal_fa_by_IQ_FDreg <- tractable_single_tract(
+    df         = elgan_afq_prob_iq,
+    tract      = "Callosum Superior Parietal",
+    target     = "dti_fa",
+    regressors = c("mri_age", "iq85", "female", "vendor", "mean_fd"),
+    node_group = "iq85"
+)
+
+summary(cc_sup_parietal_fa_by_IQ_FDreg)
 
 
 
