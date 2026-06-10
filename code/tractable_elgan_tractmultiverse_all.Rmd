@@ -684,7 +684,7 @@ cc_sup_par_byIQ <- my_spline_diff(
   factor_b = "1",
   save_output = TRUE,
   sim.ci = FALSE,
-  output_dir="/Volumes/LaCie/Projects/elgan_dti/results/"
+  output_dir="/Volumes/LaCie/Projects/elgan_dti/results"
 )
 
 cc_sup_par_byIQ
@@ -697,9 +697,23 @@ R_ILF_byIQ <- my_spline_diff(
   factor_a = "0",
   factor_b = "1",
   save_output = TRUE,
-  output_dir="/Volumes/LaCie/Projects/elgan_dti/results/",
+  output_dir="/Volumes/LaCie/Projects/elgan_dti/results",
   sim.ci = FALSE
 )
+
+# L ILF 
+L_ILF_byIQ <- my_spline_diff(
+  gam_model = fa_iq_models[["Left Inferior Longitudinal"]],
+  tract = "Leftt Inferior Longitudinal",
+  group_by = "iq85",
+  factor_a = "0",
+  factor_b = "1",
+  save_output = TRUE,
+  output_dir="/Volumes/LaCie/Projects/elgan_dti/results",
+  sim.ci = FALSE
+)
+
+
 
 
 ```
