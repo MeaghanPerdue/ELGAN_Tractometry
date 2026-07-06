@@ -168,6 +168,180 @@ elgan_afq_prob <- elgan_afq_prob %>%
 
 ```
 
+## Load Deterministic AFQ data and compile
+```{r}
+# Define base path and site IDs
+base_path <- "/Volumes/LaCie/Projects/elgan_dti/data"
+sites <- c("site-120", "site-130", "site-140", "site-150", "site-160",
+           "site-170", "site-220", "site-230", "site-310", "site-320", "site-330")
+
+# Build file paths
+tract_profile_paths <- file.path(base_path, sites, "derivatives", "afq_det", "tract_profiles.csv")
+
+# Name the vector so site labels are preserved
+names(tract_profile_paths) <- sites
+
+# Vendor lookup
+vendor_map <- c(
+  "site-120" = "Siemens",
+  "site-130" = "Siemens",
+  "site-140" = "Siemens",      
+  "site-150" = "Philips",
+  "site-160" = "Philips",
+  "site-170" = "Siemens",
+  "site-220" = "Siemens",
+  "site-230" = "Siemens",
+  "site-310" = "GE",
+  "site-320" = "GE",
+  "site-330" = "Philips"
+)
+
+# Read and combine, adding 'site' and 'vendor' columns
+det_tract_profiles_combined <- tract_profile_paths |>
+  map(\(path) {
+    if (file.exists(path)) {
+      read_csv(path, show_col_types = FALSE, col_types = cols(.default = "c"))
+    } else {
+      warning(paste("File not found:", path))
+      NULL
+    }
+  }) |>
+  compact() |>
+  list_rbind(names_to = "site") |>
+  mutate(vendor = vendor_map[site]) |>
+  type_convert()
+
+
+# Add demographic data to tract profiles
+elgan_afq_det<-inner_join(det_tract_profiles_combined, subinfo_filtered, by = "subjectID")
+
+write.csv(elgan_afq_det, "/Volumes/LaCie/Projects/elgan_dti/data/ELGAN_afq_det_filtered.csv", row.names=FALSE)
+
+
+# Load database for analysis
+#elgan_afq_det <- read.csv("/Volumes/LaCie/Projects/elgan_dti/data/ELGAN_afq_det_filtered.csv") 
+
+elgan_afq_det <- elgan_afq_det %>%
+  mutate(across(c(subjectID, sex, ndd, lowiq, female, site, vendor, ivhx, iq85, ga_group, bw_group), as.factor)) |>
+  mutate(across(c(dti_fa, dti_md), as.numeric))
+```
+
+## Load AFQ Probabilistic Ends-Clipped and compile
+```{r}
+# Define base path and site IDs
+base_path <- "/Volumes/LaCie/Projects/elgan_dti/data"
+sites <- c("site-120", "site-130", "site-140", "site-150", "site-160",
+           "site-170", "site-220", "site-230", "site-310", "site-320", "site-330")
+
+# Build file paths
+tract_profile_paths <- file.path(base_path, sites, "derivatives", "afq_prob_clip", "tract_profiles.csv")
+
+# Name the vector so site labels are preserved
+names(tract_profile_paths) <- sites
+
+# Vendor lookup
+vendor_map <- c(
+  "site-120" = "Siemens",
+  "site-130" = "Siemens",
+  "site-140" = "Siemens",      
+  "site-150" = "Philips",
+  "site-160" = "Philips",
+  "site-170" = "Siemens",
+  "site-220" = "Siemens",
+  "site-230" = "Siemens",
+  "site-310" = "GE",
+  "site-320" = "GE",
+  "site-330" = "Philips"
+)
+
+# Read and combine, adding 'site' and 'vendor' columns
+prob_clip_tract_profiles_combined <- tract_profile_paths |>
+  map(\(path) {
+    if (file.exists(path)) {
+      read_csv(path, show_col_types = FALSE, col_types = cols(.default = "c"))
+    } else {
+      warning(paste("File not found:", path))
+      NULL
+    }
+  }) |>
+  compact() |>
+  list_rbind(names_to = "site") |>
+  mutate(vendor = vendor_map[site]) |>
+  type_convert()
+
+
+# Add demographic data to tract profiles
+elgan_afq_prob_clip<-inner_join(prob_clip_tract_profiles_combined, subinfo_filtered, by = "subjectID")
+
+write.csv(elgan_afq_prob_clip, "/Volumes/LaCie/Projects/elgan_dti/data/ELGAN_afq_prob_clip_filtered.csv", row.names=FALSE)
+
+
+# Load database for analysis
+#elgan_afq_prob_clip <- read.csv("/Volumes/LaCie/Projects/elgan_dti/data/ELGAN_afq_prob_clip_filtered.csv") 
+
+elgan_afq_prob_clip <- elgan_afq_prob %>%
+  mutate(across(c(subjectID, sex, ndd, lowiq, female, site, vendor, ivhx, iq85, ga_group, bw_group), as.factor)) |>
+  mutate(across(c(dti_fa, dti_md), as.numeric))
+```
+
+## Load deterministic-clipped ends and compile
+```{r}
+# Define base path and site IDs
+base_path <- "/Volumes/LaCie/Projects/elgan_dti/data"
+sites <- c("site-120", "site-130", "site-140", "site-150", "site-160",
+           "site-170", "site-220", "site-230", "site-310", "site-320", "site-330")
+
+# Build file paths
+tract_profile_paths <- file.path(base_path, sites, "derivatives", "afq_det_clip", "tract_profiles.csv")
+
+# Name the vector so site labels are preserved
+names(tract_profile_paths) <- sites
+
+# Vendor lookup
+vendor_map <- c(
+  "site-120" = "Siemens",
+  "site-130" = "Siemens",
+  "site-140" = "Siemens",      
+  "site-150" = "Philips",
+  "site-160" = "Philips",
+  "site-170" = "Siemens",
+  "site-220" = "Siemens",
+  "site-230" = "Siemens",
+  "site-310" = "GE",
+  "site-320" = "GE",
+  "site-330" = "Philips"
+)
+
+# Read and combine, adding 'site' and 'vendor' columns
+det_clip_tract_profiles_combined <- tract_profile_paths |>
+  map(\(path) {
+    if (file.exists(path)) {
+      read_csv(path, show_col_types = FALSE, col_types = cols(.default = "c"))
+    } else {
+      warning(paste("File not found:", path))
+      NULL
+    }
+  }) |>
+  compact() |>
+  list_rbind(names_to = "site") |>
+  mutate(vendor = vendor_map[site]) |>
+  type_convert()
+
+
+# Add demographic data to tract profiles
+elgan_afq_det_clip<-inner_join(det_clip_tract_profiles_combined, subinfo_filtered, by = "subjectID")
+
+write.csv(elgan_afq_det_clip, "/Volumes/LaCie/Projects/elgan_dti/data/ELGAN_afq_det_clip_filtered.csv", row.names=FALSE)
+
+
+# Load database for analysis
+#elgan_afq_det_clip <- read.csv("/Volumes/LaCie/Projects/elgan_dti/data/ELGAN_afq_det_clip_filtered.csv") 
+
+elgan_afq_det_clip <- elgan_afq_det %>%
+  mutate(across(c(subjectID, sex, ndd, lowiq, female, site, vendor, ivhx, iq85, ga_group, bw_group), as.factor)) |>
+  mutate(across(c(dti_fa, dti_md), as.numeric))
+```
+
 ## Check out QC differences by vendor, site, and analysis groups of interest
 
 ```{r}
@@ -232,6 +406,30 @@ t.test(mean_fd ~ bw_group, dat=df_qc) ## p=.0495
 
 ```
 
+## Direct comparison of tractography methods
+### Full length tracts: Prob vs Det
+```{r Prob vs Det}
+library(tractable)
+# Add variable for tractography type and merge dataframes
+elgan_afq_prob$tractography<-"prob"
+elgan_afq_det$tractography<-"det"
+
+elgan_afq_noclip <- rbind(elgan_afq_prob, elgan_afq_det)
+
+
+plot_fa_by_tractography_noclip<- plot_tract_profiles(
+  df = elgan_afq_noclip,
+  y = c("dti_fa"),
+  tracts = c("Callosum Anterior Frontal", "Callosum Superior Frontal", "Callosum Motor", "Callosum Superior Parietal", "Callosum Posterior Parietal", "Callosum Occipital", "Left Corticospinal", "Right Corticospinal", "Left Cingulum Cingulate", "Right Cingulum Cingulate","Left Anterior Thalamic", "Right Anterior Thalamic", "Left Inferior Longitudinal", "Right Inferior Longitudinal", "Left Inferior Fronto-occipital", "Right Inferior Fronto-occipital", "Left Superior Longitudinal", "Right Superior Longitudinal", "Left Arcuate", "Right Arcuate"),
+  group_col = "tractography",
+  group_pal = "cbb",
+  save_figure = FALSE)
+plot_fa_by_tractography_noclip
+
+
+
+
+```
 
 
 ## Exclude bad tracts
@@ -500,6 +698,16 @@ elgan_afq_prob_iq <- elgan_afq_prob_iq |>
 
 write.csv(elgan_afq_prob_iq,"/Volumes/LaCie/Projects/elgan_dti/data/ELGAN_afq_prob_iq.csv", row.names = FALSE)
 
+## Now deterministic
+elgan_afq_det_iq <- elgan_afq_det %>% 
+                        filter(!is.na(iq85)) 
+elgan_afq_det_iq <- elgan_afq_det_iq |>
+  mutate(across(c(subjectID, sex, ndd, lowiq, female, site, vendor, ivhx, iq85, ga_group, bw_group), as.factor)) |>
+  mutate(across(c(dti_fa, dti_md), as.numeric))                        
+
+write.csv(elgan_afq_det_iq,"/Volumes/LaCie/Projects/elgan_dti/data/ELGAN_afq_det_iq.csv", row.names = FALSE)
+
+# Plot FA profiles by IQ - probabilistic
 plot_fa_by_iq <- plot_tract_profiles(
   df = elgan_afq_prob_iq,
   y = c("dti_fa"),
@@ -508,6 +716,17 @@ plot_fa_by_iq <- plot_tract_profiles(
   group_pal = "cbb",
   save_figure = FALSE)
 plot_fa_by_iq 
+
+
+# Plot FA profiles by IQ - deterministic
+plot_det_fa_by_iq <- plot_tract_profiles(
+  df = elgan_afq_det_iq,
+  y = c("dti_fa"),
+  tracts = c("Callosum Anterior Frontal", "Callosum Superior Frontal", "Callosum Motor", "Callosum Superior Parietal", "Callosum Posterior Parietal", "Callosum Occipital", "Left Corticospinal", "Right Corticospinal", "Left Cingulum Cingulate", "Right Cingulum Cingulate","Left Anterior Thalamic", "Right Anterior Thalamic", "Left Inferior Longitudinal", "Right Inferior Longitudinal", "Left Inferior Fronto-occipital", "Right Inferior Fronto-occipital", "Left Superior Longitudinal", "Right Superior Longitudinal", "Left Arcuate", "Right Arcuate"),
+  group_col = "iq85",
+  group_pal = "cbb",
+  save_figure = FALSE)
+plot_det_fa_by_iq 
 
 
 # loop GAMM over all tracts
@@ -538,6 +757,20 @@ fa_iq_models <- tracts |>
       node_group = "iq85"
     )
   })
+
+det_fa_iq_models <- tracts |>
+  set_names() |>
+  map(\(tract) {
+    message("Fitting: ", tract)
+    tractable_single_tract(
+      df         = elgan_afq_det_iq,
+      tract      = tract,
+      target     = "dti_fa",
+      regressors = c("mri_age", "mean_fd", "vendor", "female", "iq85"),
+      node_group = "iq85"
+    )
+  })
+
 
 #To get the summary for any tract: summary(fa_iq_models[["Left Arcuate"]])
 
@@ -587,6 +820,22 @@ results_iq <- map_dfr(fa_iq_models, \(model) {
 print(results_iq)
 
 write.csv(results_iq, "/Volumes/LaCie/Projects/elgan_dti/results/ohbm_results_prob.csv", row.names=FALSE)
+
+
+# FDR correction deterministic models
+results_iq_det <- map_dfr(det_fa_iq_models, \(model) {
+  s <- summary(model)
+  tibble(
+    coef  = s[["p.coeff"]][[regressor]],
+    tval  = s[["p.t"]][[regressor]],
+    pval  = s[["p.pv"]][[regressor]]
+  )
+}, .id = "tract") |>
+  mutate(pfdr = p.adjust(pval, method = "fdr"))
+
+print(results_iq_det)
+
+write.csv(results_iq_det, "/Volumes/LaCie/Projects/elgan_dti/results/ohbm_results_det.csv", row.names=FALSE)
 
 
 ```
@@ -704,7 +953,7 @@ R_ILF_byIQ <- my_spline_diff(
 # L ILF 
 L_ILF_byIQ <- my_spline_diff(
   gam_model = fa_iq_models[["Left Inferior Longitudinal"]],
-  tract = "Leftt Inferior Longitudinal",
+  tract = "Left Inferior Longitudinal",
   group_by = "iq85",
   factor_a = "0",
   factor_b = "1",
