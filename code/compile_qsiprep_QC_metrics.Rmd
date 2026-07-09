@@ -1,0 +1,64 @@
+---
+title: "Compile QSIPrep QC"
+author: "Meaghan Perdue with Claude AI"
+date: "6/2/2026"
+output: html_document
+---
+
+## Compile QSIPrep QC outputs single site
+Compiles sub-NN_ses-NN_dir-AP_space-ACPC_desc-image_qc.tsv outputs from all subjects within a single site.
+Outputs compiled .csv file within derivatives/qsiprep folder.
+Also saves full combined QC output across all sites within parent directory
+
+```{r}
+library(tidyverse)
+
+# Define parent path and sites
+base_path <- "/Volumes/LaCie/Projects/elgan_dti/data"
+sites <- c("site-120", "site-130", "site-140", "site-150", "site-160",
+           "site-170", "site-220", "site-230", "site-310", "site-320", "site-330")
+#sites<-c("PING")
+
+# Build qsiprep paths
+qsiprep_paths <- file.path(base_path, sites, "derivatives", "qsiprep")
+names(qsiprep_paths) <- sites
+
+# Read, save per-site, and combine
+qc_combined <- qsiprep_paths |>
+  imap(\(p, site) {
+    if (!dir.exists(p)) {
+      warning(paste("Directory not found:", p))
+      return(NULL)
+    }
+    
+    # Find and read all QC files for this site
+    qc_files <- list.files(p, pattern = "image_qc\\.tsv$", recursive = TRUE, full.names = TRUE)
+    
+    if (length(qc_files) == 0) {
+      warning(paste("No QC files found in:", p))
+      return(NULL)
+    }
+    
+    site_qc <- qc_files |>
+      map(\(f) read_tsv(f, show_col_types = FALSE)) |>
+      list_rbind() |>
+      rename(subjectID = subject_id, sessionID = session_id) |>
+      select(subjectID, sessionID, everything())
+    
+    # Save per-site CSV
+    write_csv(site_qc, file.path(p, "qc_combined.csv"))
+    message("Saved per-site QC for ", site)
+    
+    site_qc
+  }) |>
+  compact() |>
+  list_rbind()
+
+# Preview
+glimpse(qc_combined)
+
+# Save full combined CSV to parent directory
+write_csv(qc_combined, file.path(base_path, "qsiprep_qc_combined.csv"))
+message("Saved full combined QC to ", base_path)
+```
+
