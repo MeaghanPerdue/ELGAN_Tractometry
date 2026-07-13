@@ -342,6 +342,57 @@ elgan_afq_det_clip <- elgan_afq_det_clip %>%
   mutate(across(c(dti_fa, dti_md), as.numeric))
 ```
 
+## Load PING data
+```{r}
+base_path <- "/Volumes/LaCie/Projects/elgan_dti/data/PING"
+
+afq_ping <- read.csv(file.path(base_path, "derivatives", "afq", "tract_profiles.csv")) %>%
+              mutate(
+                subjectID = as.factor(subjectID),
+                sessionID = as.factor(sessionID)
+              )
+
+
+# read in QSIprep QC data and select relevant columns
+qc<-read.csv(file.path(base_path, "derivatives", "qsiprep", "qc_combined.csv")) %>%
+  mutate(
+    subjectID = as.factor(str_remove(subjectID, "^sub-")),
+    sessionID = as.factor(str_remove(sessionID, "^ses-"))
+  )
+
+
+#merge data and filter out by mean FD
+ping <- left_join(afq_ping, qc, by="subjectID") %>%
+                    filter(mean_fd<=1) 
+
+# add grouping variable for preterm
+ping$preterm <- 0
+
+
+```
+
+## Add PING data to ELGAN database
+```{r}
+# clean DF
+colnames(elgan_afq_prob)[3]<-"sessionID"
+
+elgan_afq_prob <- elgan_afq_prob %>%
+        select(-sessionID.y)
+
+# add grouping variable to ELGAN
+elgan_afq_prob$preterm <- 1
+
+# combine dataframes
+
+elgan_ping <- bind_rows(elgan_afq_prob, ping)
+
+# factorize
+elgan_ping <- elgan_ping %>%
+  mutate(across(c(subjectID, sex, ndd, lowiq, female, site, vendor, ivhx, iq85, ga_group, bw_group, preterm), as.factor)) |>
+  mutate(across(c(dti_fa, dti_md), as.numeric))
+
+```
+
 ## Check out QC differences by vendor, site, and analysis groups of interest
 
 ```{r}
@@ -877,6 +928,19 @@ plot_fa_by_ndd_clean
 
 ```
 
+## Plot Profiles ELGAN vs PING
+```{r}
+plot_elgan_ping<- plot_tract_profiles(
+  df = elgan_ping,
+  y = c("dti_fa"),
+  tracts = c("Callosum Anterior Frontal", "Callosum Superior Frontal", "Callosum Motor", "Callosum Superior Parietal", "Callosum Posterior Parietal", "Callosum Occipital", "Left Corticospinal", "Right Corticospinal", "Left Cingulum Cingulate", "Right Cingulum Cingulate","Left Anterior Thalamic", "Right Anterior Thalamic", "Left Inferior Longitudinal", "Right Inferior Longitudinal", "Left Inferior Fronto-occipital", "Right Inferior Fronto-occipital", "Left Superior Longitudinal", "Right Superior Longitudinal", "Left Arcuate", "Right Arcuate"),
+  group_col = "preterm",
+  group_pal = "cbb",
+  save_figure = FALSE)
+plot_elgan_ping
+
+
+```
 
 ### FDR correction for FSIQ models
 ```{r FDR corr}
