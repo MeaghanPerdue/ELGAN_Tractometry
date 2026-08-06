@@ -12,7 +12,7 @@
 
 
 # Version for site-170 implemented Aug 2026
-BIDSDIR=/Volumes/PsychiatryNeuroinformatics$/Data/Elgan3/ELGAN_BIDS/site-170
+BIDSDIR=/Volumes/LaCie/Projects/elgan_dti/data/site-170
 
 for i in $(cat tmpsubs.txt); do
     cd $BIDSDIR/${i}/ses-03/anat
