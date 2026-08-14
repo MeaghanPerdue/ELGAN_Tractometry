@@ -11,6 +11,8 @@ from afqinsight.neurocombat_sklearn import CombatModel
 from afqinsight.plot import plot_tract_profiles
 from afqinsight.plot import POSITIONS
 
+import matplotlib.pyplot as plt
+
 # --------------------------------------------------------------------------------------------------------
 # First, organize the aggregated pyAFQ profiles data from all sites according to AFQ-Browser data format
 # This requires separate .csv files for nodes (tract profiles) and subjects (participant info)
@@ -113,4 +115,11 @@ site_figs = plot_tract_profiles(
     subplot_positions=PYAFQ_TO_AFQINSIGHT_POSITIONS
 )
 
+plt.show()
 
+for name, fig in site_figs.items():
+    fig.savefig(
+        f"/Volumes/LaCie/Projects/elgan_dti/data/harmonize/unharmonized_{name}_tract_profiles.png",
+        dpi=300,
+        bbox_inches="tight"
+    )
