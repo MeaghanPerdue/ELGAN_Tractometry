@@ -102,13 +102,6 @@ PYAFQ_TO_AFQINSIGHT_POSITIONS = OrderedDict({
     "Callosum Occipital": (5, 3),
 })
 
-# afqinsight only auto-expands to a 6-row grid when it recognizes SHORT-form
-# callosal names ("SupParietal", etc.) in the data; our tractIDs are long-form,
-# so that autodetection never fires and it silently builds a 5-row grid instead
-# -> pass nrows/ncols explicitly everywhere PYAFQ_TO_AFQINSIGHT_POSITIONS is used.
-POSITIONS_NROWS = 6
-POSITIONS_NCOLS = 4
-
 # --------------------------------------------------------------------------------------------------------
 # Check distribution of subjects across sites before harmonizing 
 # merge small Ns (<10) if similar scan parameters
@@ -196,10 +189,11 @@ ax.set_ylabel("MRI age")
 ax.set_xlabel("")
 ax.set_title("MRI age by site (Kruskal-Wallis p=0.0028)")
 plt.tight_layout()
-plt.show()
+#plt.show()
 
 # --------------------------------------------------------------------------------------------------------
 # Plot mean bundle profiles by site before harmonization
+# explicitly indicate nrows and ncols else index error
 # --------------------------------------------------------------------------------------------------------
 
 site_figs = plot_tract_profiles(
@@ -207,10 +201,12 @@ site_figs = plot_tract_profiles(
     group_by=afqdata.y[:, 0],
     group_by_name="Site",
     figsize=(14, 14),
-    subplot_positions=PYAFQ_TO_AFQINSIGHT_POSITIONS
+    subplot_positions=PYAFQ_TO_AFQINSIGHT_POSITIONS,
+    nrows=6,
+    ncols=4
 )
 
-plt.show()
+#plt.show()
 
 for name, fig in site_figs.items():
     fig.savefig(
@@ -243,8 +239,6 @@ combat.fit(
     continuous_covariates,
 )
 
-
-
 harmonized = afqdata.copy()
 harmonized.X = combat.transform(
     afqdata.X,
@@ -252,6 +246,9 @@ harmonized.X = combat.transform(
     discrete_covariates,
     continuous_covariates,
 )
+
+harmonized.to_csv('/Volumes/LaCie/Projects/elgan_dti/data/harmonize/elgan_afq_prob_harmonized.csv', index = False)
+
 # --------------------------------------------------------------------------------------------------------
 # Plot harmonized data
 # --------------------------------------------------------------------------------------------------------
@@ -261,7 +258,9 @@ site_figs_harmonized = plot_tract_profiles(
     group_by=merged_labels,
     group_by_name="Site",
     figsize=(14, 14),
-    subplot_positions=PYAFQ_TO_AFQINSIGHT_POSITIONS
+    subplot_positions=PYAFQ_TO_AFQINSIGHT_POSITIONS,
+    nrows=6,
+    ncols=4
 )
 
 plt.show()
