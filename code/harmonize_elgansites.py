@@ -8,7 +8,7 @@ from scipy import stats
 from afqinsight import AFQDataset
 from afqinsight.neurocombat_sklearn import CombatModel
 from afqinsight.plot import plot_tract_profiles
-from afqinsight.plot import POSITIONS
+from collections import OrderedDict
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -59,50 +59,48 @@ afqdata = AFQDataset.from_files(
 
 
 # --------------------------------------------------------------------------------------------------------
-# update positions dictionary with aliases from pyAFQ and fix subplot array
+# Subplot position layout for pyAFQ waypoint tract names (long-form, as used in ELGAN tractIDs)
+# 6x4 grid, left/right mirrored by column, callosal subdivisions each in their own cell
+# (no HCC_L/HCC_R since waypoint segmentation only yields Cingulum Cingulate for that pathway)
 # --------------------------------------------------------------------------------------------------------
 
-my_positions = POSITIONS.copy()
+PYAFQ_TO_AFQINSIGHT_POSITIONS = OrderedDict({
+    # --- Row 0: Inferior Fronto-occipital / Uncinate ---
+    "Left Inferior Fronto-occipital": (0, 0),
+    "Left Uncinate": (0, 1),
+    "Right Uncinate": (0, 2),
+    "Right Inferior Fronto-occipital": (0, 3),
 
-my_positions.update({
-    "Left Arcuate": POSITIONS["ARC_L"],
-    "Right Arcuate": POSITIONS["ARC_R"],
-    "Left Anterior Thalamic": POSITIONS["ATR_L"],
-    "Right Anterior Thalamic": POSITIONS["ATR_R"],
-    "Left Cingulum Cingulate": POSITIONS["CGC_L"],
-    "Right Cingulum Cingulate": POSITIONS["CGC_R"],
-    "Left Corticospinal": POSITIONS["CST_L"],
-    "Right Corticospinal": POSITIONS["CST_R"],
-    "Left Inferior Fronto-occipital": POSITIONS["IFOF_L"],
-    "Right Inferior Fronto-occipital": POSITIONS["IFOF_R"],
-    "Left Inferior Longitudinal": POSITIONS["ILF_L"],
-    "Right Inferior Longitudinal": POSITIONS["ILF_R"],
-    "Left Superior Longitudinal": POSITIONS["SLF_L"],
-    "Right Superior Longitudinal": POSITIONS["SLF_R"],
-    "Left Uncinate": POSITIONS["UNC_L"],
-    "Right Uncinate": POSITIONS["UNC_R"],
-    "Callosum Anterior Frontal": POSITIONS["AntFrontal"],
-    "Callosum Motor": POSITIONS["Motor"],
-    "Callosum Occipital": POSITIONS["Occipital"],
-    "Callosum Orbital": POSITIONS["Orbital"],
-    "Callosum Posterior Parietal": POSITIONS["PostParietal"],
-    "Callosum Superior Frontal": POSITIONS["SupFrontal"],
-    "Callosum Superior Parietal": POSITIONS["SupParietal"],
-    "Callosum Temporal": POSITIONS["Temporal"]
+    # --- Row 1: Anterior Thalamic / Corticospinal ---
+    "Left Anterior Thalamic": (1, 0),
+    "Left Corticospinal": (1, 1),
+    "Right Corticospinal": (1, 2),
+    "Right Anterior Thalamic": (1, 3),
+
+    # --- Row 2: Arcuate / Superior Longitudinal ---
+    "Left Arcuate": (2, 0),
+    "Left Superior Longitudinal": (2, 1),
+    "Right Superior Longitudinal": (2, 2),
+    "Right Arcuate": (2, 3),
+
+    # --- Row 3: Inferior Longitudinal / Cingulum Cingulate ---
+    "Left Inferior Longitudinal": (3, 0),
+    "Left Cingulum Cingulate": (3, 1),
+    "Right Cingulum Cingulate": (3, 2),
+    "Right Inferior Longitudinal": (3, 3),
+
+    # --- Row 4: Callosal subdivisions, anterior half ---
+    "Callosum Orbital": (4, 0),
+    "Callosum Anterior Frontal": (4, 1),
+    "Callosum Superior Frontal": (4, 2),
+    "Callosum Motor": (4, 3),
+
+    # --- Row 5: Callosal subdivisions, posterior half ---
+    "Callosum Superior Parietal": (5, 0),
+    "Callosum Temporal": (5, 1),
+    "Callosum Posterior Parietal": (5, 2),
+    "Callosum Occipital": (5, 3),
 })
-
-my_positions["Callosum Superior Parietal"] = (4, 0)
-my_positions["Callosum Temporal"] = (4, 1)
-my_positions["Callosum Posterior Parietal"] = (4, 2)
-my_positions["Callosum Occipital"] = (4, 3)
-
-my_positions["SupParietal"] = (4, 0)
-my_positions["Temporal"] = (4, 1)
-my_positions["PostParietal"] = (4, 2)
-my_positions["Occipital"] = (4, 3)
-
-# Save this for future use
-PYAFQ_TO_AFQINSIGHT_POSITIONS = my_positions
 
 # --------------------------------------------------------------------------------------------------------
 # Check distribution of subjects across sites before harmonizing 
