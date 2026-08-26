@@ -128,68 +128,68 @@ print(pd.Series(merged_labels).value_counts())
 # Check correlation of covariates and covariate differences by site
 # --------------------------------------------------------------------------------------------------------
 
-# --- 1. Pairwise correlation: gadays vs bw ---
-ga_idx = afqdata.target_cols.index("gadays")
-bw_idx = afqdata.target_cols.index("bw")
+# # --- 1. Pairwise correlation: gadays vs bw ---
+# ga_idx = afqdata.target_cols.index("gadays")
+# bw_idx = afqdata.target_cols.index("bw")
 
-ga = afqdata.y[:, ga_idx].astype(float)
-bw = afqdata.y[:, bw_idx].astype(float)
+# ga = afqdata.y[:, ga_idx].astype(float)
+# bw = afqdata.y[:, bw_idx].astype(float)
 
-# drop any pairs with NaN in either variable
-mask = ~np.isnan(ga) & ~np.isnan(bw)
+# # drop any pairs with NaN in either variable
+# mask = ~np.isnan(ga) & ~np.isnan(bw)
 
-r, p = stats.pearsonr(ga[mask], bw[mask])
-print(f"Pearson r (gadays vs bw): r={r:.3f}, p={p:.4g}, n={mask.sum()}")
+# r, p = stats.pearsonr(ga[mask], bw[mask])
+# print(f"Pearson r (gadays vs bw): r={r:.3f}, p={p:.4g}, n={mask.sum()}")
 
-rho, p_s = stats.spearmanr(ga[mask], bw[mask])
-print(f"Spearman rho (gadays vs bw): rho={rho:.3f}, p={p_s:.4g}")
+# rho, p_s = stats.spearmanr(ga[mask], bw[mask])
+# print(f"Spearman rho (gadays vs bw): rho={rho:.3f}, p={p_s:.4g}")
 
-# ga_day and bw correlate strongly, use only ga_days in harmonization
+# # ga_day and bw correlate strongly, use only ga_days in harmonization
 
-# --- 2. Do gadays, bw, iq85, mri_age differ significantly by site? ---
-vars_to_check = ["gadays", "bw", "iq85", "mri_age"]
+# # --- 2. Do gadays, bw, iq85, mri_age differ significantly by site? ---
+# vars_to_check = ["gadays", "bw", "iq85", "mri_age"]
 
-# use merged_labels (post-merge site groupings) as the grouping variable
-df = pd.DataFrame({
-    "site": merged_labels,
-    **{v: afqdata.y[:, afqdata.target_cols.index(v)].astype(float) for v in vars_to_check}
-})
+# # use merged_labels (post-merge site groupings) as the grouping variable
+# df = pd.DataFrame({
+#     "site": merged_labels,
+#     **{v: afqdata.y[:, afqdata.target_cols.index(v)].astype(float) for v in vars_to_check}
+# })
 
-for v in vars_to_check:
-    sub = df[["site", v]].dropna()
-    groups = [sub.loc[sub["site"] == s, v].values for s in sub["site"].unique()]
-    # drop groups that are empty after dropna
-    groups = [g for g in groups if len(g) > 0]
+# for v in vars_to_check:
+#     sub = df[["site", v]].dropna()
+#     groups = [sub.loc[sub["site"] == s, v].values for s in sub["site"].unique()]
+#     # drop groups that are empty after dropna
+#     groups = [g for g in groups if len(g) > 0]
 
-    # Kruskal-Wallis is safer than one-way ANOVA here given small/uneven
-    # site sizes and no guarantee of normality within site
-    h_stat, p_kw = stats.kruskal(*groups)
-    print(f"{v}: Kruskal-Wallis H={h_stat:.3f}, p={p_kw:.4g}, n={len(sub)}, "
-          f"n_sites={sub['site'].nunique()}")
+#     # Kruskal-Wallis is safer than one-way ANOVA here given small/uneven
+#     # site sizes and no guarantee of normality within site
+#     h_stat, p_kw = stats.kruskal(*groups)
+#     print(f"{v}: Kruskal-Wallis H={h_stat:.3f}, p={p_kw:.4g}, n={len(sub)}, "
+#           f"n_sites={sub['site'].nunique()}")
 
-## mri_age differs significantly by site -- follow up
-mri_age_summary = df.groupby("site")["mri_age"].agg(
-    n="count", median="median", mean="mean", std="std", min="min", max="max"
-).sort_values("median")
-print(mri_age_summary)
+# ## mri_age differs significantly by site -- follow up
+# mri_age_summary = df.groupby("site")["mri_age"].agg(
+#     n="count", median="median", mean="mean", std="std", min="min", max="max"
+# ).sort_values("median")
+# print(mri_age_summary)
 
-# order sites by median mri_age for readability
-order = df.groupby("site")["mri_age"].median().sort_values().index
+# # order sites by median mri_age for readability
+# order = df.groupby("site")["mri_age"].median().sort_values().index
 
-fig, ax = plt.subplots(figsize=(10, 6))
-sns.boxplot(data=df, x="site", y="mri_age", order=order, showfliers=False,
-            color="lightgray", ax=ax)
-sns.stripplot(data=df, x="site", y="mri_age", order=order,
-              color="black", alpha=0.6, jitter=0.15, ax=ax)
+# fig, ax = plt.subplots(figsize=(10, 6))
+# sns.boxplot(data=df, x="site", y="mri_age", order=order, showfliers=False,
+#             color="lightgray", ax=ax)
+# sns.stripplot(data=df, x="site", y="mri_age", order=order,
+#               color="black", alpha=0.6, jitter=0.15, ax=ax)
 
-# annotate n per site on the x-axis labels
-n_per_site = df.groupby("site")["mri_age"].count()
-ax.set_xticklabels([f"{s}\n(n={n_per_site[s]})" for s in order], rotation=45, ha="right")
-ax.set_ylabel("MRI age")
-ax.set_xlabel("")
-ax.set_title("MRI age by site (Kruskal-Wallis p=0.0028)")
-plt.tight_layout()
-#plt.show()
+# # annotate n per site on the x-axis labels
+# n_per_site = df.groupby("site")["mri_age"].count()
+# ax.set_xticklabels([f"{s}\n(n={n_per_site[s]})" for s in order], rotation=45, ha="right")
+# ax.set_ylabel("MRI age")
+# ax.set_xlabel("")
+# ax.set_title("MRI age by site (Kruskal-Wallis p=0.0028)")
+# plt.tight_layout()
+# #plt.show()
 
 # --------------------------------------------------------------------------------------------------------
 # Plot mean bundle profiles by site before harmonization
@@ -208,12 +208,12 @@ site_figs = plot_tract_profiles(
 
 #plt.show()
 
-for name, fig in site_figs.items():
-    fig.savefig(
-        f"/Volumes/LaCie/Projects/elgan_dti/data/harmonize/unharmonized_{name}_tract_profiles.png",
-        dpi=300,
-        bbox_inches="tight"
-    )
+# for name, fig in site_figs.items():
+#     fig.savefig(
+#         f"/Volumes/LaCie/Projects/elgan_dti/data/harmonize/unharmonized_{name}_tract_profiles.png",
+#         dpi=300,
+#         bbox_inches="tight"
+#     )
 
 
 # --------------------------------------------------------------------------------------------------------
@@ -247,7 +247,6 @@ harmonized.X = combat.transform(
     continuous_covariates,
 )
 
-harmonized.to_csv('/Volumes/LaCie/Projects/elgan_dti/data/harmonize/elgan_afq_prob_harmonized.csv', index = False)
 
 # --------------------------------------------------------------------------------------------------------
 # Plot harmonized data
@@ -263,11 +262,65 @@ site_figs_harmonized = plot_tract_profiles(
     ncols=4
 )
 
-plt.show()
+# plt.show()
 
-for name, fig in site_figs_harmonized.items():
-    fig.savefig(
-        f"/Volumes/LaCie/Projects/elgan_dti/data/harmonize/harmonized_{name}_tract_profiles.png",
-        dpi=300,
-        bbox_inches="tight"
-    )
+# for name, fig in site_figs_harmonized.items():
+#     fig.savefig(
+#         f"/Volumes/LaCie/Projects/elgan_dti/data/harmonize/harmonized_{name}_tract_profiles.png",
+#         dpi=300,
+#         bbox_inches="tight"
+#     )
+
+# --------------------------------------------------------------------------------------------------------
+# Test - run node-wise regression on harmonized data
+# --------------------------------------------------------------------------------------------------------
+from afqinsight.parametric import node_wise_regression
+from afqinsight.plot import plot_regression_profiles
+
+tracts = ["Left Arcuate", "Right Arcuate", "Left Corticospinal", "Right Corticospinal"]
+
+num_cols = 2
+
+# Define the figure and grid
+fig, axes = plt.subplots(nrows=2, ncols=num_cols, figsize=(10, 6))
+
+# ensure 'female' is the sole grouping column, and is first
+target_cols = list(harmonized.target_cols)
+female_idx = target_cols.index("female")
+
+if female_idx != 0:
+    # swap names
+    target_cols[0], target_cols[female_idx] = target_cols[female_idx], target_cols[0]
+    # swap the corresponding data columns too, so labels stay matched to data
+    harmonized.y[:, [0, female_idx]] = harmonized.y[:, [female_idx, 0]]
+
+harmonized.target_cols = target_cols
+
+assert harmonized.target_cols.count("female") == 1
+assert harmonized.target_cols[0] == "female"
+
+# Loop through the data and generate plots
+# note, C(female) is used here to denote categorical variable
+for i, tract in enumerate(tracts):
+    # fit node-wise regression for each tract based on model formula
+    tract_dict = node_wise_regression(harmonized, tract, "dti_fa", "dti_fa ~ C(female)", group="female")
+
+    row = i // num_cols
+    col = i % num_cols
+
+    axes[row][col].set_title(tract)
+
+    # Visualize
+    # ----------
+    # We can visualize the results with the `plot_regression_profiles`
+    # function. Each subplot shows the tract profiles of the two groups,
+    # while controlling for any covariates, with stars indicating the nodes
+    # at which the null hypothesis is rejected.
+
+    plot_regression_profiles(tract_dict, axes[row][col])
+
+# Adjust layout to prevent overlap
+plt.tight_layout()
+
+# Show the plot
+plt.show()
