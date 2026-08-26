@@ -67,26 +67,26 @@ afqdata = AFQDataset.from_files(
 PYAFQ_TO_AFQINSIGHT_POSITIONS = OrderedDict({
     # --- Row 0: Inferior Fronto-occipital / Uncinate ---
     "Left Inferior Fronto-occipital": (0, 0),
-    "Left Uncinate": (0, 1),
-    "Right Uncinate": (0, 2),
+    "UNC_L": (0, 1),   # afqinsight translates "Left Uncinate" -> "UNC_L" internally
+    "UNC_R": (0, 2),   # afqinsight translates "Right Uncinate" -> "UNC_R" internally
     "Right Inferior Fronto-occipital": (0, 3),
 
     # --- Row 1: Anterior Thalamic / Corticospinal ---
     "Left Anterior Thalamic": (1, 0),
-    "Left Corticospinal": (1, 1),
-    "Right Corticospinal": (1, 2),
+    "CST_L": (1, 1),   # afqinsight translates "Left Corticospinal" -> "CST_L" internally
+    "CST_R": (1, 2),   # afqinsight translates "Right Corticospinal" -> "CST_R" internally
     "Right Anterior Thalamic": (1, 3),
 
     # --- Row 2: Arcuate / Superior Longitudinal ---
-    "Left Arcuate": (2, 0),
+    "ARC_L": (2, 0),   # afqinsight translates "Left Arcuate" -> "ARC_L" internally
     "Left Superior Longitudinal": (2, 1),
     "Right Superior Longitudinal": (2, 2),
-    "Right Arcuate": (2, 3),
+    "ARC_R": (2, 3),   # afqinsight translates "Right Arcuate" -> "ARC_R" internally
 
     # --- Row 3: Inferior Longitudinal / Cingulum Cingulate ---
     "Left Inferior Longitudinal": (3, 0),
-    "Left Cingulum Cingulate": (3, 1),
-    "Right Cingulum Cingulate": (3, 2),
+    "CGC_L": (3, 1),   # afqinsight translates "Left Cingulum Cingulate" -> "CGC_L" internally
+    "CGC_R": (3, 2),   # afqinsight translates "Right Cingulum Cingulate" -> "CGC_R" internally
     "Right Inferior Longitudinal": (3, 3),
 
     # --- Row 4: Callosal subdivisions, anterior half ---
@@ -101,6 +101,13 @@ PYAFQ_TO_AFQINSIGHT_POSITIONS = OrderedDict({
     "Callosum Posterior Parietal": (5, 2),
     "Callosum Occipital": (5, 3),
 })
+
+# afqinsight only auto-expands to a 6-row grid when it recognizes SHORT-form
+# callosal names ("SupParietal", etc.) in the data; our tractIDs are long-form,
+# so that autodetection never fires and it silently builds a 5-row grid instead
+# -> pass nrows/ncols explicitly everywhere PYAFQ_TO_AFQINSIGHT_POSITIONS is used.
+POSITIONS_NROWS = 6
+POSITIONS_NCOLS = 4
 
 # --------------------------------------------------------------------------------------------------------
 # Check distribution of subjects across sites before harmonizing 
