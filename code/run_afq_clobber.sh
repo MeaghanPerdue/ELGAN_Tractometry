@@ -6,10 +6,12 @@
 #BSUB -R "rusage[mem=10G]"
 
 # CAUTION! only run this once pyAFQ outputs have been safely copied to local drive
-# Runs pyAFQ with DTI model and deterministic tractography
+# Run this on afq-waypoints outputs prior to running recobundles segmentation
+# clears bundle segmentation outputs from pyAFQ derivatives
+# this allows Recobundles segmentation to be performed on the same tractography as AFQ-waypoints
 
 module load apptainer
 
-apptainer exec --containall \
+apptainer run --containall \
     -B $HOME/elgan_dti/code:/code,$HOME/elgan_dti/data:/bids,$HOME/elgan_dti/data/derivatives:/derivatives,$HOME/elgan_dti/work:/work,$HOME:/home/meaghan.perdue-umw \
-    pyafq_latest.sif python /code/afq_dti_det.py
+    pyafq_latest.sif python /code/afq_run_recobundles.py
