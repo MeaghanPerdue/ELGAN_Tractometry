@@ -21,41 +21,9 @@ preproc_pipeline = "qsiprep"
 
 # List of participant labels (subject IDs) to perform
 # processing on. If None, all subjects are used. Indicate with empty ""
-# Format: participant_labels = ['IDSTRING'] exclude ''' prefix
+# Format: participant_labels = ['IDSTRING'] exclude 'sub-' prefix
 # Default: None
-participant_labels = [ 
-                        'E1600071G',
-                        'E1600121J',
-                        'E1600151G',
-                        'E1600221H',
-                        'E1600241F',
-                        'E1600251E',
-                        'E1600281B',
-                        'E1600291A',
-                        'E1600331E',
-                        'E1600411E',
-                        'E1600431C',
-                        'E1600461L',
-                        'E1600491I',
-                        'E1600501D',
-                        'E1600521B',
-                        'E1600531A',
-                        'E1600601A',
-                        'E1600602K',
-                        'E1600641I',
-                        'E1600642G',
-                        'E1600652F',
-                        'E1600661G',
-                        'E1600692B',
-                        'E1600702I ',
-                        'E1600721I',
-                        'E1600722G',
-                        'E1600831F',
-                        'E1600861C',
-                        'E1600881A',
-                        'E1600902E',
-                        'E1600903C'
-                        ]
+participant_labels = "['E2200321H']"
 
 # Enable this if re-running and want to use existing outputs
 # force_recompute = false
@@ -67,7 +35,7 @@ participant_labels = [
 # them (this means you need to clear the output folder if you want
 # to recalculate a derivative).
 # Default: None
-output_dir = "/derivatives/afq"
+output_dir = "/derivatives/afq_test"
 
 # Parameters to pass to paramap in AFQ.utils.parallel,
 # to parallelize computations across subjects and sessions.
@@ -89,7 +57,7 @@ bids_layout_kwargs = "{}"
 # How tracking directions are determined.
 # One of: {"det" | "prob"}
 # Default: "prob"
-directions = "prob"
+directions = "det"
 
 # The maximum turning angle in each step. Default: 30
 max_angle = 30.0
@@ -158,7 +126,7 @@ minlen = 20
 maxlen = 250
 
 # One of {"DTI", "CSD", "DKI"}. Defaults to use "CSD"
-odf_model = "CSD"
+odf_model = "DTI"
 
 # Which strategy to use in tracking. This can be the standard local
 # tracking ("local") or Particle Filtering Tracking ([Girard2014]_).
@@ -243,7 +211,7 @@ dist_to_atlas = 4
 
 # The full path to a folder into which intermediate products
 # are saved. Default: None, means no saving of intermediates.
-save_intermediates = ""
+save_intermediates = "/derivatives/afq/intermediates"
 
 # Cleaning params to pass to seg.clean_bundle. This will
 # override the default parameters of that method. However, this
@@ -313,16 +281,16 @@ robust_tensor_fitting = false
 # (i.e. S0). If not provided, auto_response will be used to calculate
 # these values.
 # Default: None
-csd_response = ""
+#csd_response = ""
 
 # default: infer the number of parameters from the number of data
 # volumes, but no larger than 8.
 # Default: None
-csd_sh_order = 4
+#csd_sh_order = ""
 
 # weight given to the constrained-positivity regularization part of
 # the deconvolution equation. Default: 1
-csd_lambda_ = 1
+#csd_lambda_ = 
 
 # threshold controlling the amplitude below which the corresponding
 # fODF is assumed to be zero.  Ideally, tau should be set to
@@ -330,11 +298,11 @@ csd_lambda_ = 1
 # set to tau*100 percent of the mean fODF amplitude (here, 10 percent
 # by default)
 # (see [1]_). Default: 0.1
-csd_tau = 0.1
+#csd_tau = 0.1
 
 # The threshold on the FA used to calculate the single shell auto
 # response. Can be useful to reduce for baby subjects. Default: 0.7
-csd_fa_thr = 0.7
+#csd_fa_thr = 0.7
 
 # Diffusion sampling length.
 # Default: 1.2
@@ -342,29 +310,29 @@ gq_sampling_length = 1.2
 
 # Able to take response[0] from auto_response_ssst.
 # default: array([0.0017, 0.0002, 0.0002])
-rumba_wm_response = "[0.0017, 0.0002, 0.0002]"
+#rumba_wm_response = "[0.0017, 0.0002, 0.0002]"
 
 # Mean diffusivity for GM compartment.
 # If None, then grey matter volume fraction is not computed.
 # Default: 0.8e-3
-rumba_gm_response = 0.0008
+#rumba_gm_response = 0.0008
 
 # Mean diffusivity for CSF compartment.
 # If None, then CSF volume fraction is not computed.
 # Default: 3.0e-3
-rumba_csf_response = 0.003
+#rumba_csf_response = 0.003
 
 # Number of iterations for fODF estimation.
 # Must be a positive int.
 # Default: 600
-rumba_n_iter = 600
+#rumba_n_iter = 1000
 
 
 
 # The sphere providing sample directions for the initial
 # search of the maximal value of kurtosis.
 # Default: 'repulsion100'
-sphere = "repulsion100"
+#sphere = "repulsion100"
 
 # This input is to refine kurtosis maxima under the precision of
 # the directions sampled on the sphere class instance.
@@ -373,7 +341,7 @@ sphere = "repulsion100"
 # If gtol is None, fiber direction is directly taken from the initial
 # sampled directions of the given sphere object.
 # Default: 1e-2
-gtol = 0.01
+#gtol = 0.01
 
 # This will be used to create
 # the brain mask, which gets applied before registration to a

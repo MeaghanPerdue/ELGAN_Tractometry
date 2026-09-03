@@ -20,45 +20,10 @@ bids_filters = "{'suffix': 'dwi'}"
 preproc_pipeline = "qsiprep"
 
 # List of participant labels (subject IDs) to perform
-# processing on. If None, all subjects are used. Indicate with empty ""
-# Format: participant_labels = ['IDSTRING'] exclude ''' prefix
+# processing on. If None (empty quotes), all subjects are used.
+# Format: participant_labels = ['IDSTRING'] exclude 'sub-' prefix
 # Default: None
-participant_labels = [ 
-                        'E1600071G',
-                        'E1600121J',
-                        'E1600151G',
-                        'E1600221H',
-                        'E1600241F',
-                        'E1600251E',
-                        'E1600281B',
-                        'E1600291A',
-                        'E1600331E',
-                        'E1600411E',
-                        'E1600431C',
-                        'E1600461L',
-                        'E1600491I',
-                        'E1600501D',
-                        'E1600521B',
-                        'E1600531A',
-                        'E1600601A',
-                        'E1600602K',
-                        'E1600641I',
-                        'E1600642G',
-                        'E1600652F',
-                        'E1600661G',
-                        'E1600692B',
-                        'E1600702I ',
-                        'E1600721I',
-                        'E1600722G',
-                        'E1600831F',
-                        'E1600861C',
-                        'E1600881A',
-                        'E1600902E',
-                        'E1600903C'
-                        ]
-
-# Enable this if re-running and want to use existing outputs
-# force_recompute = false
+participant_labels = ""
 
 # Path to output directory. If None, outputs are put
 # in a AFQ pipeline folder in the derivatives folder of
@@ -67,7 +32,7 @@ participant_labels = [
 # them (this means you need to clear the output folder if you want
 # to recalculate a derivative).
 # Default: None
-output_dir = "/derivatives/afq"
+output_dir = "/derivatives/afq_recobundles"
 
 # Parameters to pass to paramap in AFQ.utils.parallel,
 # to parallelize computations across subjects and sessions.
@@ -75,7 +40,7 @@ output_dir = "/derivatives/afq"
 # the number of cpus. Here is an example for how to do
 # multiprocessing with 4 cpus:
 # {"n_jobs": 4, "engine": "joblib", "backend": "loky"}
-# Default: {"engine": "serial"}
+# Default: {"engine": "serial"} ## except must use single quotes inside the curly brackets ##
 parallel_params = "{'engine': 'serial'}"
 
 # Additional arguments to give to BIDSLayout from pybids.
@@ -119,15 +84,15 @@ thresholds_as_percentages = false
 # array, these are the coordinates of the seeds. Unless random_seeds is
 # set to True, in which case this is the total number of random seeds
 # to generate within the mask. Default: 1
-n_seeds = 1
+n_seeds = 25000
 
 # Whether to generate a total of n_seeds random seeds in the mask.
 # Default: False.
-random_seeds = false
+random_seeds = true
 
 # random seed used to generate random seeds if random_seeds is
 # set to True. Default: None
-rng_seed = ""
+rng_seed = 42
 
 # If array: A float or binary mask that determines a stopping criterion
 # (e.g. FA).
@@ -199,27 +164,6 @@ rb_recognize_params = "{'model_clust_thr': 1.25, 'reduction_thr': 25, 'pruning_t
 # Whether to refine the RecoBundles segmentation.
 # Default: False
 refine_reco = false
-
-# Using AFQ Algorithm.
-# Initial cleaning of fiber groups is done using probability maps
-# from [Hua2008]_. Here, we choose an average probability that
-# needs to be exceeded for an individual streamline to be retained.
-# Default: 0.
-prob_threshold = 0
-
-# The distance that a streamline node has to be from the waypoint
-# ROI in order to be included or excluded.
-# If set to None (default), will be calculated as the
-# center-to-corner distance of the voxel in the diffusion data.
-# If a bundle has inc_addtol or exc_addtol in its bundle_dict, that
-# tolerance will be added to this distance.
-# For example, if you wanted to increase tolerance for the right
-# arcuate waypoint ROIs by 3 each, you could make the following
-# modification to your bundle_dict:
-# bundle_dict["Right Arcuate"]["inc_addtol"] = [3, 3]
-# Additional tolerances can also be negative.
-# Default: None.
-dist_to_waypoint = ""
 
 # If None, creates RandomState.
 # If int, creates RandomState with seed rng.
@@ -387,9 +331,10 @@ brain_mask_definition = "ImageFile(suffix='mask',filters={'desc': 'brain', 'spac
 # See `Defining Custom Bundle Dictionaries`
 # in the `usage` section of pyAFQ's documentation for details.
 # If None, will get all appropriate bundles for the chosen
+# For recobundles, set "reco_bd(N)" where N is the number of bundles to segment
 # segmentation algorithm.
 # Default: None
-bundle_info = ""
+bundle_info = "reco_bd(16)"
 
 # The target image data for registration.
 # Can either be a Nifti1Image, a path to a Nifti1Image, or
