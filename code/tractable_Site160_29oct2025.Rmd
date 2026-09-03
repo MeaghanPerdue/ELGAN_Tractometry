@@ -1,0 +1,500 @@
+---
+title: "Tractable Test"
+output: html_notebook
+---
+
+Testing Tractable to run GAMs on pyAFQ tractometry outputs with Elgan3 UMMS data
+
+# Load libraries
+```{r setup}
+library(tractable)
+library(dplyr)
+library(ggplot2)
+```
+
+# Load data - AFQ waypoints tracts
+
+```{r load_data}
+afqtracts<-read.csv("/Volumes/LaCie/Projects/elgan_dti/data/Site-160_ELGAN/derivatives/afq/tract_profiles.csv")
+
+demos<-read.table("/Volumes/LaCie/Projects/elgan_dti/data/Site-160_ELGAN/participants.tsv", header=TRUE, sep="\t")
+
+demos$ga_days<-as.numeric(demos$ga_days)
+
+demos$bw<-as.numeric(demos$bw)
+
+elgan<-demos %>%
+        filter(dti_include != 0) 
+elgan$sex<-as.factor(elgan$sex)
+
+# Fix elgan subjectID to match AFQ
+elgan$subjectID<-paste("E", elgan$subjectID, sep = "")
+     
+# Calculate the median of 'bw', excluding NAs
+median_bw <- median(elgan$bw, na.rm = TRUE)
+
+# Create the 'bw_group' column
+elgan$bw_group <- ifelse(is.na(elgan$bw), NA, ifelse(elgan$bw > median_bw, "High", "Low"))
+
+# Optionally convert to factor
+elgan$bw_group <- factor(elgan$bw_group, levels = c("Low", "High"))
+
+# Calculate the median of 'ga_days', excluding NAs
+median_ga <- median(elgan$ga_days, na.rm = TRUE)
+
+# Create the 'ga_group' column
+elgan$ga_group <- ifelse(elgan$ga_days > median_ga, "High", "Low")
+
+afq<-inner_join(elgan, afqtracts, by= "subjectID") 
+
+
+afq$sex<-as.factor(afq$sex)
+afq$subjectID<-as.factor(afq$subjectID)
+afq$bw_group<-as.factor(afq$bw_group)
+afq$ga_group<-as.factor(afq$ga_group)
+
+```
+
+# Participants summary
+```{r}
+library(psych)
+
+desc <- as.data.frame(describe(elgan, na.rm= TRUE)) %>%
+          filter(row.names(as.data.frame(describe(elgan, na.rm= TRUE))) %in% c("age_months", "ga_days", "bw")) %>%
+          select("mean", "sd", "median", "min", "max")
+
+colnames(desc) <- c("Mean", "SD", "Median", "Min.", "Max.")
+row.names(desc) <- c("Age at MRI (months)", "Gestational Age at Birth (days)", "Birth Weight (g)")
+desc          
+
+write.csv(desc, "/Users/meaghan/Library/CloudStorage/OneDrive-UMassChanMedicalSchool/ELGAN/ELGAN_Tractometry/abstracts/Site160_descriptives.csv")
+
+
+summary(elgan$sex)
+
+```
+
+# Plot Profiles - AFQ waypoints tracts
+```{r plot_profiles_afq}
+plot_afq <- plot_tract_profiles(
+  df = afq,
+  y = c("dti_fa"),
+  tracts = c("Left Corticospinal", "Right Corticospinal", "Left Inferior Fronto-occipital", "Right Inferior Fronto-occipital", "Callosum Anterior Frontal", "Callosum Occipital"),
+  group_col = "sex",
+  save_figure = FALSE
+)
+plot_afq
+
+# Now plot by ga median split
+plot_ga_afq <- plot_tract_profiles(
+  df = afq,
+  y = c("dti_fa"),
+  tracts = c("Left Corticospinal", "Right Corticospinal", "Left Inferior Fronto-occipital", "Right Inferior Fronto-occipital", "Callosum Anterior Frontal", "Callosum Occipital"),
+  group_col = "ga_group",
+  save_figure = FALSE
+)
+plot_ga_afq 
+
+
+                        
+
+# Now plot by birthweight median split
+plot_bw_afq <- plot_tract_profiles(
+  df = afq,
+  y = c("dti_fa"),
+  tracts = c("Left Corticospinal", "Right Corticospinal", "Left Inferior Fronto-occipital", "Right Inferior Fronto-occipital", "Callosum Anterior Frontal", "Callosum Occipital"),
+  group_col = "bw_group",
+  save_figure = FALSE
+)
+ plot_bw_afq
+
+```
+# Fit GAMs by tract - AFQ Waypoints Tracts
+## CST
+Make sure node group variable and subjectID are set as factors, else an error will occur
+```{r cst_model_fit}
+
+CCant_ga_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Callosum Anterior Frontal",
+  target = "dti_fa",
+  regressors = c("ga_group"),
+  node_group = "ga_group",
+  k = "auto"
+)
+
+CCant_ga_summary <- summary(CCant_ga_fit)
+CCant_ga_summary
+
+CCocc_ga_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Callosum Occipital",
+  target = "dti_fa",
+  regressors = c("ga_group"),
+  node_group = "ga_group",
+  k = "auto"
+)
+
+CCocc_ga_summary <- summary(CCocc_ga_fit)
+CCocc_ga_summary
+
+lcst_ga_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Left Corticospinal",
+  target = "dti_fa",
+  regressors = c("ga_group"),
+  node_group = "ga_group",
+  k = "auto"
+)
+
+lcst_ga_summary <- summary(lcst_ga_fit)
+lcst_ga_summary
+#Marginal
+
+rcst_ga_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Right Corticospinal",
+  target = "dti_fa",
+  regressors = c("ga_group"),
+  node_group = "ga_group",
+  k = "auto"
+)
+
+rcst_ga_summary <- summary(rcst_ga_fit)
+rcst_ga_summary
+# sig diff p=.048
+
+lifo_ga_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Left Inferior Fronto-occipital",
+  target = "dti_fa",
+  regressors = "ga_group",
+  node_group = "ga_group",
+  k = "auto"
+)
+
+lifo_ga_summary <- summary(lifo_ga_fit)
+lifo_ga_summary
+
+rifo_ga_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Right Inferior Fronto-occipital",
+  target = "dti_fa",
+  regressors = "ga_group",
+  node_group = "ga_group",
+  k = "auto"
+)
+
+rifo_ga_summary <- summary(rifo_ga_fit)
+rifo_ga_summary
+
+###############################################################
+# Now testing by birthweight median split
+CCant_bw_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Callosum Anterior Frontal",
+  target = "dti_fa",
+  regressors = "bw_group",
+  node_group = "bw_group",
+  k = "auto"
+)
+
+CCant_bw_summary <- summary(CCant_bw_fit)
+CCant_bw_summary
+
+CCocc_bw_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Callosum Occipital",
+  target = "dti_fa",
+  regressors = "bw_group",
+  node_group = "bw_group",
+  k = "auto"
+)
+
+CCocc_bw_summary <- summary(CCocc_bw_fit)
+CCocc_bw_summary
+
+lcst_bw_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Left Corticospinal",
+  target = "dti_fa",
+  regressors = "bw_group",
+  node_group = "bw_group",
+  k = "auto"
+)
+
+lcst_bw_summary <- summary(lcst_bw_fit)
+lcst_bw_summary
+
+rcst_bw_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Right Corticospinal",
+  target = "dti_fa",
+  regressors = "bw_group",
+  node_group = "bw_group",
+  k = "auto"
+)
+
+rcst_bw_summary <- summary(rcst_bw_fit)
+rcst_bw_summary
+
+
+lifo_bw_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Left Inferior Fronto-occipital",
+  target = "dti_fa",
+  regressors = "bw_group",
+  node_group = "bw_group",
+  k = "auto"
+)
+
+lifo_bw_summary <- summary(lifo_bw_fit)
+lifo_bw_summary
+# This one sig!
+
+rifo_bw_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Right Inferior Fronto-occipital",
+  target = "dti_fa",
+  regressors = "bw_group",
+  node_group = "bw_group",
+  k = "auto"
+)
+
+rifo_bw_summary <- summary(rifo_bw_fit)
+rifo_bw_summary
+##Marginal
+
+```
+
+## IFO
+```{r ifo_model_fit}
+
+
+rifo_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Right Inferior Fronto-occipital",
+  target = "dti_fa",
+  regressors = "sex",
+  node_group = "sex",
+  k = "auto"
+)
+
+rifo_summary <- summary(rifo_fit)
+rifo_summary
+
+
+
+lifo_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Left Inferior Fronto-occipital",
+  target = "dti_fa",
+  regressors = "sex",
+  node_group = "sex",
+  k = "auto"
+)
+
+lifo_summary <- summary(lifo_fit)
+lifo_summary
+
+
+rifo_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Right Inferior Fronto-occipital",
+  target = "dti_fa",
+  regressors = "sex",
+  node_group = "sex",
+  k = "auto"
+)
+
+rifo_summary <- summary(rifo_fit)
+rifo_summary
+
+
+# Now testing by birthweight median split
+lifo_bw_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Left Inferior Fronto-occipital",
+  target = "dti_fa",
+  regressors = "bw_group",
+  node_group = "bw_group",
+  k = "auto"
+)
+
+lifo_bw_summary <- summary(lifo_bw_fit)
+lifo_bw_summary
+
+```
+
+# Now with Recobundles outputs
+```{r load_data}
+recobundles<-read.csv("/Volumes/LaCie/Projects/elgan_dti/data/Site-160_ELGAN/derivatives/afq_recobundles/tract_profiles.csv")
+
+
+
+reco<-inner_join(recobundles, elgan, by= "subjectID") 
+
+
+
+reco$sex<-as.factor(reco$sex)
+reco$subjectID<-as.factor(reco$subjectID)
+reco$bw_group<-as.factor(reco$bw_group)
+reco$ga_group<-as.factor(reco$ga_group)
+
+```
+
+# Plot tract profiles - Recobundles
+```{r plot_profiles_reco}
+#plot by GA
+plot_reco_ga <- plot_tract_profiles(
+  df = reco,
+  y = c("dti_fa"),
+  tracts = c("CC_ForcepsMinor", "CC_ForcepsMajor", "CST_L", "CST_R", "IFOF_L", "IFOF_R"),
+  group_col = "ga_group",
+  save_figure = FALSE
+)
+plot_reco_ga
+
+# Plot by BW
+plot_reco_bw <- plot_tract_profiles(
+  df = reco,
+  y = c("dti_fa"),
+  tracts = c("CST_L", "CST_R", "IFOF_L", "IFOF_R", "CC_ForcepsMinor", "CC_ForcepsMajor"),
+  group_col = "bw_group",
+  save_figure = FALSE
+)
+plot_reco_bw
+
+
+```
+# Fit GAMs by tract
+## CC - FM
+Make sure node group variable and subjectID are set as factors, else an error will occur
+```{r cst_model_fit_reco}
+
+ccfm_reco_fit <- tractable_single_tract(
+  df = reco,
+  tract = "CC_ForcepsMajor",
+  target = "dti_fa",
+  regressors = "bw_group",
+  node_group = "bw_group",
+  k = "auto"
+)
+
+ccfm_reco_summary <- summary(ccfm_reco_fit)
+ccfm_reco_summary
+
+ccfm_ga_reco_fit <- tractable_single_tract(
+  df = reco,
+  tract = "CC_ForcepsMajor",
+  target = "dti_fa",
+  regressors = "ga_group",
+  node_group = "ga_group",
+  k = "auto"
+)
+
+ccfm_ga_reco_summary <- summary(ccfm_ga_reco_fit)
+ccfm_ga_reco_summary
+
+
+
+```
+
+## IFO
+```{r ifo_model_fit_reco}
+rifo_bw_reco_fit <- tractable_single_tract(
+  df = reco,
+  tract = "IFOF_R",
+  target = "dti_fa",
+  regressors = "bw_group",
+  node_group = "bw_group",
+  k = "auto"
+)
+
+rifo_bw_reco_summary <- summary(rifo_bw_reco_fit)
+rifo_bw_reco_summary
+# MARGINAL
+
+lifo_bw_reco_fit <- tractable_single_tract(
+  df = reco,
+  tract = "IFOF_L",
+  target = "dti_fa",
+  regressors = "bw_group",
+  node_group = "bw_group",
+  k = "auto"
+)
+
+lifo_bw_reco_summary <- summary(lifo_bw_reco_fit)
+lifo_bw_reco_summary
+
+
+
+lifo_ga_reco_fit <- tractable_single_tract(
+  df = reco,
+  tract = "IFOF_L",
+  target = "dti_fa",
+  regressors = "ga_group",
+  node_group = "ga_group",
+  k = "auto"
+)
+
+lifo_ga_reco_summary <- summary(lifo_ga_reco_fit)
+lifo_ga_reco_summary
+
+rifo_ga_reco_fit <- tractable_single_tract(
+  df = reco,
+  tract = "IFOF_R",
+  target = "dti_fa",
+  regressors = "ga_group",
+  node_group = "ga_group",
+  k = "auto"
+)
+
+rifo_ga_reco_summary <- summary(rifo_ga_reco_fit)
+rifo_ga_reco_summary
+
+```
+
+# CST Recobundles
+```{r CST Recobundles}
+rcst_bw_reco_fit <- tractable_single_tract(
+  df = reco,
+  tract = "CST_R",
+  target = "dti_fa",
+  regressors = "bw_group",
+  node_group = "bw_group",
+  k = "auto"
+)
+
+rcst_bw_reco_summary <- summary(rcst_bw_reco_fit)
+rcst_bw_reco_summary
+
+
+
+lcst_ga_reco_fit <- tractable_single_tract(
+  df = reco,
+  tract = "CST_L",
+  target = "dti_fa",
+  regressors = "ga_group",
+  node_group = "ga_group",
+  k = "auto"
+)
+
+lcst_ga_reco_summary <- summary(lcst_ga_reco_fit)
+lcst_ga_reco_summary
+##MARGINAL
+
+rcst_ga_reco_fit <- tractable_single_tract(
+  df = reco,
+  tract = "CST_R",
+  target = "dti_fa",
+  regressors = "ga_group",
+  node_group = "ga_group",
+  k = "auto"
+)
+
+rcst_ga_reco_summary <- summary(rcst_ga_reco_fit)
+rcst_ga_reco_summary
+
+
+```

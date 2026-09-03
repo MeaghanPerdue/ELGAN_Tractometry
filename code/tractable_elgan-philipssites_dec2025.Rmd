@@ -1,0 +1,957 @@
+---
+title: "Tractable Test"
+output: html_notebook
+---
+
+Testing Tractable to run GAMs on pyAFQ tractometry outputs with Elgan3 UMMS data
+
+# Load libraries
+```{r setup}
+library(tractable)
+library(dplyr)
+library(ggplot2)
+```
+
+# Load data - AFQ waypoints tracts
+
+```{r}
+# Read and complile AFQ tract profiles data
+
+site160<-read.csv("/Volumes/LaCie/Projects/elgan_dti/data/Site-160_ELGAN/derivatives/afq/tract_profiles.csv")
+
+site150<-read.csv("/Volumes/LaCie/Projects/elgan_dti/data/Site-150/derivatives/afq/tract_profiles.csv")
+
+afqtracts<-bind_rows(site160, site150)
+
+# read in subjects list for analysis
+subs<-read.table("/Volumes/LaCie/Projects/elgan_dti/data/afq_include.tsv", sep = "\t", header= TRUE)
+
+# read in demographic/behavioral data and filter to included subs
+#demos<-read.csv("/Volumes/LaCie/Projects/elgan_dti/data/elgan_demog_data.csv") %>%
+#          right_join(subs, by = c("sid", "subjectID"))
+
+ses<-read.csv("/Volumes/LaCie/Projects/elgan_dti/data/ses_variables_steve071525.csv") 
+
+subs<-left_join(subs, ses, by = "sid")
+
+#read in clinical data
+clin<-read.csv("/Volumes/LaCie/Projects/elgan_dti/data/mergedcorrecteddata_cleaned_MP.csv") %>%
+                  select(c("sid", "bw", "gadays", "multip", "asd", "ados", "adhdr", "epili", "ldgroup", "dx120_4_asd", "dx120_5_cp"))
+
+
+              
+subs<-left_join(subs, clin, by = "sid")
+
+# recode ld groups as yes/no variable (ldgroup variable: WIAT LD group Math x Read (MR, R, M, neither: 1,2,3,4))
+subs$ld<-ifelse(subs$ldgroup<4, 1, 0)
+
+#add dichotomized variable for SRS (0 or any risk) at each time point
+subs$srs2_any <- ifelse(subs$srs2 > 0, 1, 0)
+subs$srs10_any <- ifelse(subs$srs10 > 0, 1, 0)
+subs$srs15_any <- ifelse(subs$srs15 > 0, 1, 0)
+
+# add cumulative SRS score for risk factors over time points
+subs$srs_cumulative <- subs$srs2 + subs$srs10 + subs$srs15
+subs$srs_cumulative_high <- ifelse(subs$srs_cumulative > 0, 1, 0)
+
+# add dichotomized FSIQ variable <85=1
+subs$fsiq_low <- ifelse(subs$FSIQ2<85,1,0)
+
+# add combined variable for low IQ x LD
+subs$ld_lowIQ <- ifelse(subs$fsiq_low==1 & subs$ld==1, 1,0)
+
+# add ld variable for "specific" LD kids withOUT low IQ
+subs$sld <- ifelse(subs$fsiq_low==0 & subs$ld==1, 1,0)
+
+# compile all data for analysis
+afq<-left_join(subs, afqtracts, by= "subjectID") 
+
+# make variables factors for GAM analysis
+afq$sex<-as.factor(afq$sex)
+afq$subjectID<-as.factor(afq$subjectID)
+afq$earlyi<-as.factor(afq$earlyi)
+#afq$srs2_any<-as.factor(afq$srs2_any)
+#afq$srs10_any<-as.factor(afq$srs10_any)
+#afq$srs15_any<-as.factor(afq$srs15_any)
+afq$srs_cumulative_high<-as.factor(afq$srs_cumulative_high)
+afq$fsiq_low<-as.factor(afq$fsiq_low)
+afq$ld_lowIQ<-as.factor(afq$ld_lowIQ) 
+afq$ld<-as.factor(afq$ld)
+afq$adhdr<-as.factor(afq$adhdr)
+
+#afq$bw_group<-as.factor(afq$bw_group)
+#afq$ga_group<-as.factor(afq$ga_group)
+
+```
+
+# Participants summary
+```{r}
+library(psych)
+
+subs_iq<-filter(subs, !is.na(subs$FSIQ2))
+
+desc <- as.data.frame(describe(subs_iq, na.rm= TRUE)) %>%
+          filter(row.names(as.data.frame(describe(subs_iq, na.rm= TRUE))) %in% c("age_mri", "gadays", "bw", "FSIQ2")) %>%
+          select("mean", "sd", "median", "min", "max")
+
+
+colnames(desc) <- c("Mean", "SD", "Median", "Min.", "Max.")
+row.names(desc) <- c("Age at MRI (yrs)", "IQ (SS)", "Birth Weight (g)", "Gestational Age at Birth (days)")
+desc          
+
+write.csv(desc, "/Users/meaghan/Library/CloudStorage/OneDrive-UMassChanMedicalSchool/ELGAN/ELGAN_Tractometry/abstracts/ohbm_descriptives.csv")
+
+count(subs_iq, sex, group_by=site)
+
+count(subs_iq, fsiq_low)
+
+
+summary(elgan$sex)
+
+```
+
+# Plot Profiles - AFQ waypoints tracts
+## Plot FA by basic demographic info
+```{r plot_profiles_afq}
+#check for site differences
+plot_fa_by_site <- plot_tract_profiles(
+  df = afq,
+  y = c("dti_fa"),
+  tracts = NULL,
+  group_col = "site",
+  save_figure = FALSE
+)
+plot_fa_by_site
+
+
+# sex differences
+plot_fa_by_sex <- plot_tract_profiles(
+  df = afq,
+  y = c("dti_fa"),
+  tracts = NULL,
+  group_col = "sex",
+  save_figure = FALSE
+)
+plot_fa_by_sex
+
+```
+
+## Plot by neurodevelopmental variables
+```{r plot by NDDs}
+
+#FSIQ <85
+# filter out missing IQ data
+afq_iq<-filter(afq, !is.na(afq$fsiq_low))
+
+plot_fa_by_iq <- plot_tract_profiles(
+  df = afq_iq,
+  y = c("dti_fa"),
+  tracts = c("Callosum Orbital", "Callosum Anterior Frontal", "Callosum Superior Frontal", "Callosum Motor", "Callosum Superior Parietal", "Callosum Posterior Parietal", "Callosum Occipital", "Left Corticospinal", "Right Corticospinal", "Left Cingulum Cingulate", "Right Cingulum Cingulate","Left Anterior Thalamic", "Right Anterior Thalamic", "Left Inferior Longitudinal", "Right Inferior Longitudinal", "Left Inferior Fronto-occipital", "Right Inferior Fronto-occipital", "Left Superior Longitudinal", "Right Superior Longitudinal", "Left Arcuate", "Right Arcuate"),
+  group_col = "fsiq_low",
+  group_pal = "cbb",
+  save_figure = FALSE
+plot_fa_by_iq
+
+
+
+# Learning Disability (Reading and/or math)
+afq_ld<-filter(afq, !is.na(afq$ld))
+
+plot_fa_by_ld <- plot_tract_profiles(
+  df = afq_ld,
+  y = c("dti_fa"),
+  tracts = NULL,
+  group_col = "ld",
+  save_figure = FALSE
+)
+plot_fa_by_ld
+
+
+# ADHD
+afq_adhd<-filter(afq, !is.na(afq$adhdr))
+
+
+plot_fa_by_adhd <- plot_tract_profiles(
+  df = afq_adhd,
+  y = c("dti_fa"),
+  tracts = NULL,
+  group_col = "adhdr",
+  save_figure = FALSE
+)
+plot_fa_by_adhd
+
+
+```
+
+## Plot FA by SES risk factors
+```{r plot by SES variables}
+# filter out participant with missing earlyi variable (31/45 subs had early intervention/infant stimulation)
+afq_earlyi <- filter(afq, !is.na(earlyi))
+
+plot_fa_by_earlyi <- plot_tract_profiles(
+  df = afq_earlyi,
+  y = c("dti_fa"),
+  tracts = NULL,
+  group_col = "earlyi",
+  save_figure = FALSE
+)
+plot_fa_by_earlyi
+
+# filter out participant with missing srs2 variable 
+afq_srs2 <- filter(afq, !is.na(srs2_any))
+
+plot_fa_by_srs2 <- plot_tract_profiles(
+  df = afq_srs2,
+  y = c("dti_fa"),
+  tracts = NULL,
+  group_col = "srs2_any",
+  save_figure = FALSE
+)
+plot_fa_by_srs2
+
+# filter out participant with missing srs10 variable 
+afq_srs10 <- filter(afq, !is.na(srs10_any))
+
+plot_fa_by_srs10 <- plot_tract_profiles(
+  df = afq_srs10,
+  y = c("dti_fa"),
+  tracts = NULL,
+  group_col = "srs10_any",
+  save_figure = FALSE
+)
+plot_fa_by_srs10
+
+
+
+# filter out participant with missing srs15 variable 
+afq_srs15 <- filter(afq, !is.na(srs15_any))
+
+plot_fa_by_srs15 <- plot_tract_profiles(
+  df = afq_srs15,
+  y = c("dti_fa"),
+  tracts = NULL,
+  group_col = "srs15_any",
+  save_figure = FALSE
+)
+plot_fa_by_srs15
+
+# Plot by cumulative SRS risk (sum of total SRS scores for each time point, split >1)
+
+afq_srs <- filter(afq, !is.na(srs_cumulative))
+
+afq_srs$srs_cumulative_high<-as.factor(afq_srs$srs_cumulative_high)
+
+plot_fa_by_srs_all <- plot_tract_profiles(
+  df = afq_srs,
+  y = c("dti_fa"),
+  tracts = NULL,
+  group_col = "srs_cumulative_high",
+  save_figure = FALSE
+)
+plot_fa_by_srs_all
+
+```
+
+# Fit GAMs by tract - AFQ Waypoints Tracts
+Make sure node group variable and subjectID are set as factors, else an error will occur
+
+
+## FSIQ
+```{r fit FSIQ<85}
+########## CC Orbital ###################################
+CCorb_iq_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Callosum Orbital",
+  target = "dti_fa",
+  regressors = c("site", "sex", "fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto"
+)
+
+CCorb_iq_summary <- summary(CCorb_iq_fit)
+CCorb_iq_summary
+
+############### CC Ant. Frontal. #########################
+CCant_iq_fit<-tractable_single_tract(
+  df = afq,
+  tract = "Callosum Anterior Frontal",
+  target = "dti_fa",
+  regressors = c("site", "sex", "fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto"
+)
+
+CCant_iq_summary <- summary(CCant_iq_fit)
+CCant_iq_summary
+
+################ CC Sup. Frontal ##########################
+
+CCsupf_iq_fit<-tractable_single_tract(
+  df = afq,
+  tract = "Callosum Superior Frontal",
+  target = "dti_fa",
+  regressors = c("site", "sex", "fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto"
+)
+
+CCsupf_iq_summary <- summary(CCsupf_iq_fit)
+CCsupf_iq_summary
+
+################# CC. Motor ##################################
+
+CCmot_iq_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Callosum Motor",
+  target = "dti_fa",
+  regressors = c("site", "sex", "fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto"
+)
+
+CCmot_iq_summary <- summary(CCmot_iq_fit)
+CCmot_iq_summary
+
+##### SIG Effect!
+
+################ CC Sup. Parietal #######################
+
+CCsuppar_iq_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Callosum Superior Parietal",
+  target = "dti_fa",
+  regressors = c("site", "sex", "fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto"
+)
+
+CCsuppar_iq_summary <- summary(CCsuppar_iq_fit)
+CCsuppar_iq_summary
+
+##### SIG but unlikely to survive corrections
+
+############### CC Post. Parietal #########################
+CCpostpiq_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Callosum Posterior Parietal",
+  target = "dti_fa",
+  regressors = c("site", "sex", "fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto"
+)
+
+CCpostp_iq_summary <- summary(CCpostpiq_fit)
+CCpostp_iq_summary
+
+################ CC Occipital #############################
+CCocc_iq_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Callosum Occipital",
+  target = "dti_fa",
+  regressors = c("site", "sex", "fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto"
+)
+
+CCocc_iq_summary <- summary(CCocc_iq_fit)
+CCocc_iq_summary
+
+############### L. Ant. Thalamic ##########################
+LATh_iq_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Left Anterior Thalamic",
+  target = "dti_fa",
+  regressors = c("site", "sex", "fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto"
+)
+
+LATh_iq_summary <- summary(LATh_iq_fit)
+LATh_iq_summary
+
+############### R. Ant. Thalamic ##########################
+RATh_iq_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Right Anterior Thalamic",
+  target = "dti_fa",
+  regressors = c("site", "sex", "fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto"
+)
+
+RATh_iq_summary <- summary(RATh_iq_fit)
+RATh_iq_summary
+
+
+################ L. Arcuate ###############################
+
+LAF_iq_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Left Arcuate",
+  target = "dti_fa",
+  regressors = c("site", "sex", "fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto"
+)
+
+LAF_iq_summary <- summary(LAF_iq_fit)
+LAF_iq_summary
+
+############### R. Arcuate #######################################
+RAF_iq_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Right Arcuate",
+  target = "dti_fa",
+  regressors = c("site", "sex", "fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto"
+)
+
+RAF_iq_summary <- summary(RAF_iq_fit)
+RAF_iq_summary
+
+############### L. Cingulum ######################################
+LCing_iq_fit<- tractable_single_tract(
+  df = afq,
+  tract = "Left Cingulum Cingulate",
+  target = "dti_fa",
+  regressors = c("site", "sex", "fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto"
+)
+
+LCing_iq_summary <- summary(LCing_iq_fit)
+LCing_iq_summary
+
+################### R. Cingulum ##################################
+RCing_iq_fit<- tractable_single_tract(
+  df = afq,
+  tract = "Right Cingulum Cingulate",
+  target = "dti_fa",
+  regressors = c("site", "sex", "fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto"
+)
+
+RCing_iq_summary <- summary(RCing_iq_fit)
+RCing_iq_summary
+
+##################### L. Corticospinal ############################
+LCST_iq_fit<- tractable_single_tract(
+  df = afq,
+  tract = "Left Corticospinal",
+  target = "dti_fa",
+  regressors = c("site", "sex", "fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto"
+)
+
+LCST_iq_summary <- summary(LCST_iq_fit)
+LCST_iq_summary
+
+
+####################### R. Corticospinal ###########################
+RCST_iq_fit<- tractable_single_tract(
+  df = afq,
+  tract = "Right Corticospinal",
+  target = "dti_fa",
+  regressors = c("site", "sex", "fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto"
+)
+
+RCST_iq_summary <- summary(RCST_iq_fit)
+RCST_iq_summary
+
+
+################ L. IFO ##########################################
+
+LIFO_iq_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Left Inferior Fronto-occipital",
+  target = "dti_fa",
+  regressors = c("site", "sex", "fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto"
+)
+
+LIFO_iq_summary <- summary(LIFO_iq_fit)
+LIFO_iq_summary
+
+###### Marginal
+
+############## R. IFO ############################################
+LIFO_iq_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Left Inferior Fronto-occipital",
+  target = "dti_fa",
+  regressors = c("site", "sex", "fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto"
+)
+
+LIFO_iq_summary <- summary(LIFO_iq_fit)
+LIFO_iq_summary
+
+#################### R. IFO ######################################
+
+RIFO_iq_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Right Inferior Fronto-occipital",
+  target = "dti_fa",
+  regressors = c("site", "sex", "fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto"
+)
+
+RIFO_iq_summary <- summary(RIFO_iq_fit)
+RIFO_iq_summary
+
+
+##### marginal
+
+################# L. ILF #######################################
+LILF_iq_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Left Inferior Longitudinal",
+  target = "dti_fa",
+  regressors = c("site", "sex","fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto"
+)
+
+LILF_iq_summary <- summary(LILF_iq_fit)
+LILF_iq_summary
+
+########## sig. but small
+
+################# R. ILF #########################################
+
+RILF_iq_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Right Inferior Longitudinal",
+  target = "dti_fa",
+  regressors = c("site", "sex", "fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto"
+)
+
+RILF_iq_summary <- summary(RILF_iq_fit)
+RILF_iq_summary
+
+####### Significant IQ effect
+
+
+################## L. SLF ###########################
+LSLF_iq_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Left Superior Longitudinal",
+  target = "dti_fa",
+  regressors = c("site", "sex","fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto"
+)
+
+LSLF_iq_summary <- summary(LSLF_iq_fit)
+LSLF_iq_summary
+
+################## R. SLF ###########################
+RSLF_iq_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Right Superior Longitudinal",
+  target = "dti_fa",
+  regressors = c("site", "sex","fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto"
+)
+
+RSLF_iq_summary <- summary(RSLF_iq_fit)
+RSLF_iq_summary
+
+```
+
+
+
+### FDR correction for FSIQ models
+```{r FDR corr}
+tracts<-c("CC Anterior Frontal", "CC Motor", "CC Occipital", "CC Orbital", "CC Posterior Parietal", "CC Superior Frontal", "CC Superior Parietal","Left Anterior Thalamic", "Right Anterior Thalamic", "Left Arcuate", "Right Arcuate", "Left Cingulum", "Right Cingulum", "Left Corticospinal", "Right Corticospinal", "Left Inferior Fronto-Occipital", "Right Inferior Fronto-Occipital", "Left Inferior Longitudinal", "Right Inferior Longitudinal", "Left Superior Longitudinal", "Right Superior Longitudinal")
+
+fitcoef<-c(CCant_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          CCmot_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          CCocc_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          CCorb_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          CCpostp_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          CCsupf_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          CCsuppar_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          LATh_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          RATh_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          LAF_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          RAF_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          LCing_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          RCing_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          LCST_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          RCST_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          LIFO_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          RIFO_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          LILF_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          RILF_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          LSLF_iq_summary[["p.coeff"]][["fsiq_low1"]], 
+          RSLF_iq_summary[["p.coeff"]][["fsiq_low1"]])
+
+tvals<-c(CCant_iq_summary[["p.t"]][["fsiq_low1"]],
+          CCmot_iq_summary[["p.t"]][["fsiq_low1"]],
+          CCocc_iq_summary[["p.t"]][["fsiq_low1"]],
+          CCorb_iq_summary[["p.t"]][["fsiq_low1"]],
+          CCpostp_iq_summary[["p.t"]][["fsiq_low1"]],
+          CCsupf_iq_summary[["p.t"]][["fsiq_low1"]],
+          CCsuppar_iq_summary[["p.t"]][["fsiq_low1"]],
+          LATh_iq_summary[["p.t"]][["fsiq_low1"]],
+          RATh_iq_summary[["p.t"]][["fsiq_low1"]],
+          LAF_iq_summary[["p.t"]][["fsiq_low1"]],
+          RAF_iq_summary[["p.t"]][["fsiq_low1"]],
+          LCing_iq_summary[["p.t"]][["fsiq_low1"]],
+          RCing_iq_summary[["p.t"]][["fsiq_low1"]],
+          LCST_iq_summary[["p.t"]][["fsiq_low1"]],
+          RCST_iq_summary[["p.t"]][["fsiq_low1"]],
+          LIFO_iq_summary[["p.t"]][["fsiq_low1"]],
+          RIFO_iq_summary[["p.t"]][["fsiq_low1"]],
+          LILF_iq_summary[["p.t"]][["fsiq_low1"]],
+          RILF_iq_summary[["p.t"]][["fsiq_low1"]],
+          LSLF_iq_summary[["p.t"]][["fsiq_low1"]], 
+          RSLF_iq_summary[["p.t"]][["fsiq_low1"]])
+
+pvals<-c( CCant_iq_summary[["p.pv"]][["fsiq_low1"]],
+          CCmot_iq_summary[["p.pv"]][["fsiq_low1"]],
+          CCocc_iq_summary[["p.pv"]][["fsiq_low1"]],
+          CCorb_iq_summary[["p.pv"]][["fsiq_low1"]],
+          CCpostp_iq_summary[["p.pv"]][["fsiq_low1"]],
+          CCsupf_iq_summary[["p.pv"]][["fsiq_low1"]],
+          CCsuppar_iq_summary[["p.pv"]][["fsiq_low1"]],
+          LATh_iq_summary[["p.pv"]][["fsiq_low1"]],
+          RATh_iq_summary[["p.pv"]][["fsiq_low1"]],
+          LAF_iq_summary[["p.pv"]][["fsiq_low1"]],
+          RAF_iq_summary[["p.pv"]][["fsiq_low1"]],
+          LCing_iq_summary[["p.pv"]][["fsiq_low1"]],
+          RCing_iq_summary[["p.pv"]][["fsiq_low1"]],
+          LCST_iq_summary[["p.pv"]][["fsiq_low1"]],
+          RCST_iq_summary[["p.pv"]][["fsiq_low1"]],
+          LIFO_iq_summary[["p.pv"]][["fsiq_low1"]],
+          RIFO_iq_summary[["p.pv"]][["fsiq_low1"]],
+          LILF_iq_summary[["p.pv"]][["fsiq_low1"]],
+          RILF_iq_summary[["p.pv"]][["fsiq_low1"]],
+          LSLF_iq_summary[["p.pv"]][["fsiq_low1"]], 
+          RSLF_iq_summary[["p.pv"]][["fsiq_low1"]])
+
+pfdr<-p.adjust(pvals, method = "fdr", n=length(pvals))
+
+results_iq<-data_frame(tracts, fitcoef, tvals, pvals, pfdr)
+
+write.csv(results_iq, "/Users/meaghan/Library/CloudStorage/OneDrive-UMassChanMedicalSchool/ELGAN/ELGAN_Tractometry/abstracts/ohbm_results.csv")
+
+
+```
+
+## Compare Recobundles outputs
+Just doing major bundles since most were not accurately segmented
+```{r recobundles}
+recosite160<-read.csv("/Volumes/LaCie/Projects/elgan_dti/data/Site-160_ELGAN/derivatives/afq_recobundles/tract_profiles.csv")
+
+recosite150<-read.csv("/Volumes/LaCie/Projects/elgan_dti/data/Site-150/derivatives/afq_recobundles/tract_profiles.csv")
+
+recotracts<-bind_rows(recosite160, recosite150)
+
+reco<-left_join(subs, recotracts, by= "subjectID") 
+
+## Plot recobundles profiles
+reco_iq<-filter(reco, !is.na(reco$fsiq_low))
+
+reco_iq$fsiq_low<-as.factor(reco_iq$fsiq_low)
+reco_iq$site<-as.factor(reco_iq$site)
+reco_iq$sex<-as.factor(reco_iq$sex)
+reco_iq$subjectID<-as.factor(reco_iq$subjectID)
+
+
+plot_reco_fa_by_iq <- plot_tract_profiles(
+  df = reco_iq,
+  y = c("dti_fa"),
+  tracts = NULL,
+  group_col = "fsiq_low",
+  group_pal = "cbb",
+  save_figure = FALSE
+)
+plot_reco_fa_by_iq 
+
+## Fit models recobundles (only CC segments, bilat CST)
+
+###################### CC Forceps Major ######################
+recoCCfmaj_iq_fit <- tractable_single_tract(
+  df = reco_iq,
+  tract = "CC_ForcepsMajor",
+  target = "dti_fa",
+  regressors = c("site", "sex", "fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto"
+)
+
+recoCCfmaj_iq_summary <- summary(recoCCfmaj_iq_fit)
+recoCCfmaj_iq_summary
+
+####################### CC Mid ############################
+recoCCmid_iq_fit <- tractable_single_tract(
+  df = reco_iq,
+  tract = "CCMid",
+  target = "dti_fa",
+  regressors = c("site", "sex", "fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto"
+)
+
+recoCCmid_iq_summary <- summary(recoCCmid_iq_fit)
+recoCCmid_iq_summary
+
+#################### CC Forceps Minor ################
+recoCCfmin_iq_fit <- tractable_single_tract(
+  df = reco_iq,
+  tract = "CC_ForcepsMinor",
+  target = "dti_fa",
+  regressors = c("site", "sex", "fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto"
+)
+
+recoCCfmin_iq_summary <- summary(recoCCfmin_iq_fit)
+recoCCfmin_iq_summary
+
+##################### L CST ################
+recoLCST_iq_fit <- tractable_single_tract(
+  df = reco_iq,
+  tract = "CST_L",
+  target = "dti_fa",
+  regressors = c("site", "sex", "fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto",
+  na_omit =TRUE
+)
+
+recoLCST_iq_summary <- summary(recoLCST_iq_fit)
+recoLCST_iq_summary
+
+################### R CST ######################
+recoRCST_iq_fit <- tractable_single_tract(
+  df = reco_iq,
+  tract = "CST_R",
+  target = "dti_fa",
+  regressors = c("site", "sex", "fsiq_low"),
+  node_group = "fsiq_low",
+  k = "auto",
+  na_omit =TRUE
+)
+
+recoRCST_iq_summary <- summary(recoRCST_iq_fit)
+recoRCST_iq_summary
+
+```
+
+## SES Risk Score
+```{r fit SRS}
+
+RATh_srs_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Right Anterior Thalamic",
+  target = "dti_fa",
+  regressors = c("site", "srs_cumulative_high"),
+  node_group = "srs_cumulative_high",
+  k = "auto"
+)
+
+RATh_srs_summary <- summary(RATh_srs_fit)
+RATh_srs_summary
+
+LAF_srs_fit <- tractable_single_tract(
+  df = afq,
+  tract = "Left Arcuate",
+  target = "dti_fa",
+  regressors = c("site", "srs_cumulative_high"),
+  node_group = "srs_cumulative_high",
+  k = "auto"
+)
+
+LAF_srs_summary <- summary(LAF_srs_fit)
+LAF_srs_summary
+
+```
+
+
+
+# Now with Recobundles outputs
+```{r load_data}
+recobundles<-read.csv("/Volumes/LaCie/Projects/elgan_dti/data/Site-160_ELGAN/derivatives/afq_recobundles/tract_profiles.csv")
+
+
+
+reco<-inner_join(recobundles, elgan, by= "subjectID") 
+
+
+
+reco$sex<-as.factor(reco$sex)
+reco$subjectID<-as.factor(reco$subjectID)
+reco$bw_group<-as.factor(reco$bw_group)
+reco$ga_group<-as.factor(reco$ga_group)
+
+```
+
+# Plot tract profiles - Recobundles
+```{r plot_profiles_reco}
+#plot by GA
+plot_reco_ga <- plot_tract_profiles(
+  df = reco,
+  y = c("dti_fa"),
+  tracts = c("CC_ForcepsMinor", "CC_ForcepsMajor", "CST_L", "CST_R", "IFOF_L", "IFOF_R"),
+  group_col = "ga_group",
+  save_figure = FALSE
+)
+plot_reco_ga
+
+# Plot by BW
+plot_reco_bw <- plot_tract_profiles(
+  df = reco,
+  y = c("dti_fa"),
+  tracts = c("CST_L", "CST_R", "IFOF_L", "IFOF_R", "CC_ForcepsMinor", "CC_ForcepsMajor"),
+  group_col = "bw_group",
+  save_figure = FALSE
+)
+plot_reco_bw
+
+
+```
+# Fit GAMs by tract
+## CC - FM
+Make sure node group variable and subjectID are set as factors, else an error will occur
+```{r cst_model_fit_reco}
+
+ccfm_reco_fit <- tractable_single_tract(
+  df = reco,
+  tract = "CC_ForcepsMajor",
+  target = "dti_fa",
+  regressors = "bw_group",
+  node_group = "bw_group",
+  k = "auto"
+)
+
+ccfm_reco_summary <- summary(ccfm_reco_fit)
+ccfm_reco_summary
+
+ccfm_ga_reco_fit <- tractable_single_tract(
+  df = reco,
+  tract = "CC_ForcepsMajor",
+  target = "dti_fa",
+  regressors = "ga_group",
+  node_group = "ga_group",
+  k = "auto"
+)
+
+ccfm_ga_reco_summary <- summary(ccfm_ga_reco_fit)
+ccfm_ga_reco_summary
+
+
+
+```
+
+## IFO
+```{r ifo_model_fit_reco}
+rifo_bw_reco_fit <- tractable_single_tract(
+  df = reco,
+  tract = "IFOF_R",
+  target = "dti_fa",
+  regressors = "bw_group",
+  node_group = "bw_group",
+  k = "auto"
+)
+
+rifo_bw_reco_summary <- summary(rifo_bw_reco_fit)
+rifo_bw_reco_summary
+# MARGINAL
+
+lifo_bw_reco_fit <- tractable_single_tract(
+  df = reco,
+  tract = "IFOF_L",
+  target = "dti_fa",
+  regressors = "bw_group",
+  node_group = "bw_group",
+  k = "auto"
+)
+
+lifo_bw_reco_summary <- summary(lifo_bw_reco_fit)
+lifo_bw_reco_summary
+
+
+
+lifo_ga_reco_fit <- tractable_single_tract(
+  df = reco,
+  tract = "IFOF_L",
+  target = "dti_fa",
+  regressors = "ga_group",
+  node_group = "ga_group",
+  k = "auto"
+)
+
+lifo_ga_reco_summary <- summary(lifo_ga_reco_fit)
+lifo_ga_reco_summary
+
+rifo_ga_reco_fit <- tractable_single_tract(
+  df = reco,
+  tract = "IFOF_R",
+  target = "dti_fa",
+  regressors = "ga_group",
+  node_group = "ga_group",
+  k = "auto"
+)
+
+rifo_ga_reco_summary <- summary(rifo_ga_reco_fit)
+rifo_ga_reco_summary
+
+```
+
+# CST Recobundles
+```{r CST Recobundles}
+rcst_bw_reco_fit <- tractable_single_tract(
+  df = reco,
+  tract = "CST_R",
+  target = "dti_fa",
+  regressors = "bw_group",
+  node_group = "bw_group",
+  k = "auto"
+)
+
+rcst_bw_reco_summary <- summary(rcst_bw_reco_fit)
+rcst_bw_reco_summary
+
+
+
+lcst_ga_reco_fit <- tractable_single_tract(
+  df = reco,
+  tract = "CST_L",
+  target = "dti_fa",
+  regressors = "ga_group",
+  node_group = "ga_group",
+  k = "auto"
+)
+
+lcst_ga_reco_summary <- summary(lcst_ga_reco_fit)
+lcst_ga_reco_summary
+##MARGINAL
+
+rcst_ga_reco_fit <- tractable_single_tract(
+  df = reco,
+  tract = "CST_R",
+  target = "dti_fa",
+  regressors = "ga_group",
+  node_group = "ga_group",
+  k = "auto"
+)
+
+rcst_ga_reco_summary <- summary(rcst_ga_reco_fit)
+rcst_ga_reco_summary
+
+
+```

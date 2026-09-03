@@ -12,13 +12,14 @@ library(psych)
 
 base_path<-"/Volumes/LaCie/Projects/elgan_dti/data"
 
-sublist<-read.csv(file.path(base_path, "afq_include.csv"))
+sublist<-read.csv(file.path(base_path, "demog_beh", "afq_include.csv"))
+# use mri_age from here based on gathering data from elgan_demog_data.csv and Age at Date of MRI
 
-demog<-read.csv(file.path(base_path, "mergedcorrecteddata_cleaned_MP.csv")) %>%
+demog<-read.csv(file.path(base_path, "demog_beh", "mergedcorrecteddata_cleaned_MP.csv")) %>%
   select("sid", "bw", "sex", "female", "ivhx", "gadays", "plurality", "multip", "dx120_4_asd",	"dx120_5_cp", "epil", "iq85")
 
-demog2<-read.csv("/Volumes/LaCie/Projects/elgan_dti/data/elgan_demog_data.csv") %>%
-  select("sid", "develop", "AgeDecimalYRDIF", "FSIQ2", "srs15")
+demog2<-read.csv(file.path(base_path, "demog_beh", "elgan_demog_data.csv")) %>%
+  select("sid", "develop", "FSIQ2", "srs15")
 
 tmp<-left_join(sublist, demog, by="sid")
 
@@ -72,6 +73,7 @@ subinfo<-left_join(subinfo, qc, by = "subjectID")
 subinfo_filtered<-subinfo %>%
                     filter(mean_fd<=1)
 
+write.csv(subinfo_filtered, "/Volumes/LaCie/Projects/elgan_dti/data/ELGAN_tractometry_subinfo_filtered.csv", row.names=FALSE)
 
 ```
 
