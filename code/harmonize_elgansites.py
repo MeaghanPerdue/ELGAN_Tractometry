@@ -1,5 +1,7 @@
 # Use AFQ-Insight to harmonize ELGAN Tractometry data across sites via NeuroCombat
 # Following example here: <https://tractometry.org/AFQ-Insight/auto_examples/plot_hbn_site_profiles.html#sphx-glr-auto-examples-plot-hbn-site-profiles-py>
+# This code is for testing and data exploration, implement using harmonize_afq_tractometry.py CLI
+
 
 import pandas as pd
 import numpy as np
