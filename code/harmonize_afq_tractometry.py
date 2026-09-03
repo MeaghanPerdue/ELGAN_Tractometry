@@ -6,9 +6,6 @@ Executable CLI wrapper around the AFQ-Insight / NeuroCombat site-harmonization
 workflow (following the AFQ-Insight HBN site-profiles example:
 https://tractometry.org/AFQ-Insight/auto_examples/plot_hbn_site_profiles.html).
 
-written with Claude Sonnet 5
-2 Sept 2026
-
 Given a single "full" AFQ tract-profile database (one row per subject x tract
 x node, wide with all metrics and subject-level covariates included), this
 script:
@@ -27,6 +24,12 @@ script:
   7. Optionally runs a node-wise regression test on the harmonized data for a
      set of tracts, using a user-specified model formula, and plots the
      regression profiles.
+
+The "check distribution across sites" and "check correlation of covariates by
+site" exploratory sections from the original script are intentionally omitted
+here -- run those separately/interactively if you need them; they're a
+one-time QC step, not something an executable pipeline needs to redo on every
+run.
 
 Example
 -------
@@ -278,6 +281,41 @@ def harmonize(afqdata, site_codes, target_cols, y, discrete_covariate_names, con
     return harmonized
 
 
+def save_harmonized_dataset(harmonized, output_dir, subject_id_col="subjectID"):
+    """
+    Export a harmonized AFQDataset back to AFQ-Browser-format nodes.csv /
+    subjects.csv files. This is the same format read by AFQDataset.from_files,
+    so it round-trips losslessly and can be reloaded later (e.g. by
+    node_wise_regression_cli.py) without needing to re-run harmonization or
+    keep any afqinsight/pickle version pinned.
+
+    AFQDataset.subjects are prefixed with "sub-"; that prefix is stripped here
+    so the subjectID values match what you'd expect from the original input.
+    """
+    subj_ids = [s[4:] if s.startswith("sub-") else s for s in harmonized.subjects]
+
+    records = []
+    for i, subj in enumerate(subj_ids):
+        for j, (metric, tract, node) in enumerate(harmonized.feature_names):
+            records.append((subj, tract, node, metric, harmonized.X[i, j]))
+    long_df = pd.DataFrame(records, columns=[subject_id_col, "tractID", "nodeID", "metric", "value"])
+    nodes_wide = (
+        long_df.pivot_table(index=[subject_id_col, "tractID", "nodeID"], columns="metric", values="value")
+        .reset_index()
+    )
+    nodes_wide.columns.name = None
+    fn_nodes = output_dir / "harmonized_nodes.csv"
+    nodes_wide.to_csv(fn_nodes, index=False)
+
+    subjects_df = pd.DataFrame(harmonized.y, columns=harmonized.target_cols)
+    subjects_df.insert(0, subject_id_col, subj_ids)
+    fn_subjects = output_dir / "harmonized_subjects.csv"
+    subjects_df.to_csv(fn_subjects, index=False)
+
+    print(f"Saved harmonized dataset to {fn_nodes} and {fn_subjects}")
+    return fn_nodes, fn_subjects
+
+
 def run_regression_test(harmonized, tracts, metric, formula, group_col, output_dir):
     import matplotlib.pyplot as plt
     from afqinsight.parametric import node_wise_regression
@@ -352,15 +390,10 @@ def main():
             args.regression_formula, args.regression_group, args.output_dir,
         )
 
-    # Persist the harmonized dataset (nodes-format) so it can be used downstream
-    harmonized_csv = args.output_dir / "harmonized_nodes.csv"
-    try:
-        harmonized.to_csv(str(harmonized_csv))
-        print(f"Saved harmonized dataset to {harmonized_csv}")
-    except Exception as e:
-        print(f"Note: could not auto-save harmonized dataset via AFQDataset.to_csv "
-              f"({e}); harmonized.X / harmonized.y are available in-memory if you "
-              f"adapt this script to run interactively.", file=sys.stderr)
+    # Persist the harmonized dataset in AFQ-Browser format (nodes.csv + subjects.csv)
+    # so it can be reloaded later, e.g. by node_wise_regression_cli.py, without
+    # re-running harmonization.
+    save_harmonized_dataset(harmonized, args.output_dir, subject_id_col=args.subject_id_col)
 
     print("Done.")
 

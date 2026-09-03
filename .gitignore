@@ -1,0 +1,8 @@
+._*
+code/._*
+data/
+results/
+code/__pycache__
+code/.R*
+ELGAN_DTI_Processing_Log.xlsx
+*tmp*
