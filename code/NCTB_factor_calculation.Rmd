@@ -1,0 +1,104 @@
+---
+title: "ntcb Factor Score Calculation ELGAN3"
+output: html_notebook
+---
+
+Calculate factor scores for Verbal Cognition and Fluid Cognition factors from Joseph et al. 2022 PCA
+Recalculating factors from loadings matrix and NIH toolbox raw scores for DTI subset
+Scripting help from Claude Sonnet5
+
+```{r - load data}
+library(tidyverse)
+
+#load raw ntcb data and filter out empty rows, add subject id column
+raw<- read.csv("/Volumes/LaCie/Projects/elgan_dti/data/demog_beh/nih_toolbox_dti_subset.csv") %>%
+  filter(
+    if_any(
+      -studyid,
+      ~ coalesce(trimws(as.character(.)), "") != ""
+    )
+  ) %>%
+  mutate(SubjectID = paste0("E", studyid))
+
+#Select relevant columns for analysis - age-corrected standard scores
+
+ntcb<- raw %>%
+          select(SubjectID, studyid, ageCrystalCmp, ageFluidCmp, ageTotalCmp, ends_with("ageStd"))
+
+```
+
+# Run PCA on DTI subset to check if it aligns with Joseph et al. 2022 results
+```{r PCA}
+library(psych)
+
+# Define the columns of interest
+pca_vars <- c("CSageStd", "FLageStd", "LSageStd", "ORageStd", "PCageStd", "PSageStd", "PVageStd")
+
+# Subset the data
+pca_data <- ntcb[, pca_vars]
+
+# Check for missing values first — prcomp() will fail or drop rows silently otherwise
+sum(!complete.cases(pca_data))
+
+# Drop two incomplete cases
+pca_data <- pca_data[complete.cases(pca_data), ]
+
+# Run PCA (center and scale, since these are likely on similar but not identical scales)
+pca_rotated <- principal(pca_data, nfactors = 2, rotate = "varimax")
+print(pca_rotated, cut = 0.3, sort = TRUE)
+
+# Visualize loadings on first 2 components
+biplot(pca_rotated, scale = 0)
+
+
+
+
+
+```
+
+# Calculate factor scores based on the original Joseph et al 2022 PCA that was done in the full sample \
+Factor 1 (Verbal): Picture Vocabulary, Oral Reading, List Sorting WM
+Factor 2 (Fluid): Flanker, Dimensional Change Card Sort, Pattern Comparison Processing Speed
+```{r - calculate scores}
+library(psych)
+
+# ------------------------------------------------------------
+# 1. Standardize the indicator variables (z-scores)
+# ------------------------------------------------------------
+indicator_vars <- c("PVageStd", "ORageStd", "LSageStd", "FLageStd", "CSageStd", "PCageStd")
+z_data <- scale(ntcb[, indicator_vars])
+
+# ------------------------------------------------------------
+# 2. Compute factor scores using the averaging method
+# ------------------------------------------------------------
+verbal_vars <- c("PVageStd", "ORageStd", "LSageStd")
+fluid_vars  <- c("FLageStd", "CSageStd", "PCageStd")
+
+ntcb <- ntcb %>%
+  mutate(
+    Verbal_Composite = rowMeans(z_data[, verbal_vars], na.rm = TRUE),
+    Fluid_Composite  = rowMeans(z_data[, fluid_vars], na.rm = TRUE)
+  )
+
+# ------------------------------------------------------------
+# 4. Compute factor scores using the regression method
+#    FS = Z %*% R^-1 %*% L
+# ------------------------------------------------------------
+R <- cor(ntcb[, indicator_vars], use = "complete.obs")
+R_inv <- solve(R)
+
+factor_score_weights <- R_inv %*% loadings_matrix
+factor_scores <- z_data %*% factor_score_weights
+
+colnames(factor_scores) <- c("VerbalCognition_Score", "FluidCognition_Score")
+
+# ------------------------------------------------------------
+# 5. Combine with subject IDs
+# ------------------------------------------------------------
+results <- cbind(SubjectID = ntcb$SubjectID, as.data.frame(factor_scores))
+print(results)
+
+# write.csv(results, "factor_scores.csv", row.names = FALSE)
+
+```
+
