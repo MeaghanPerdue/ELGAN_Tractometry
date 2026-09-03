@@ -18,14 +18,10 @@ def infotodict(seqinfo):
     subindex: sub index within group
     """
 
-    t1w_mprage =   create_key('sub-{subject}/{session}/anat/sub-{subject}_{session}_T1w')
     t1w_se =       create_key('sub-{subject}/{session}/anat/sub-{subject}_{session}_acq-se_T1w')
     t2w_pdt2 =     create_key('sub-{subject}/{session}/anat/sub-{subject}_{session}_acq-PDT2_T2w')
     pdw_pdt2 =     create_key('sub-{subject}/{session}/anat/sub-{subject}_{session}_acq-PDT2_PDw')
     dwi_16dir =    create_key('sub-{subject}/{session}/dwi/sub-{subject}_{session}_dwi')
-    dwi_16dir_vec2 = create_key('sub-{subject}/{session}/dwi/sub-{subject}_{session}_acq-vector2_dwi')
-    rest =         create_key('sub-{subject}/{session}/func/sub-{subject}_{session}_task-rest_bold')
-    bold_sbref =   create_key('sub-{subject}/{session}/fmap/sub-{subject}_{session}_acq-sbref_epi')
     de_ge =        create_key('sub-{subject}/{session}/anat/sub-{subject}_{session}_MEGRE')
 
     data = create_key('run{item:03d}')
@@ -62,26 +58,18 @@ def infotodict(seqinfo):
         
         print("XXXXX %r %r %r %r" % (s.series_description, s.series_id, s.protocol_name, s.TE))
         assign = None
-        name = s.series_description or s.protocol_name
+        name = s.series_description or s.protocol_name or s.dcm_dir_name
 
-        # if 'GE-EPI' in name and s.dim4 == 270:
-        #     assign = rest
-        # elif 'GE-EPI' in name and s.dim4 == 1:
-        #     assign = bold_sbref
-        # elif 'T1w_MPR' in name and 'NORM' in s.image_type:
-        #     assign = t1w_mprage
-        # elif 'T1W_SE' in name.upper() and s.TE < 30:
-        #     assign = t1w_se
-        # elif 'dMRI_16dir9rep_AP' in name and 'vector2' not in name and s.dim4 == 172:
-        #     assign = dwi_16dir
-        # elif 'dMRI_16dir9rep_AP' in name and 'vector2' in name and s.dim4 == 172:
-        #     assign = dwi_16dir_vec2
-        # elif 'DE-TSE' in name.upper(): 
-        #     if s.TE < 20:
-        #         assign = pdw_pdt2
-        #     elif 90 < s.TE < 110:
-        #         assign = t2w_pdt2
-        if 'DE-GE' in name.upper():
+        if 'SE-TSE' in name.upper() and s.TE < 30 and 'ORIGINAL' in s.image_type:
+            assign = t1w_se
+        elif 'DW-SE' in name.upper() and s.dim3 > 1 and 'ORIGINAL' in s.image_type:
+            assign = dwi_16dir
+        elif 'DE-TSE' in name.upper(): 
+            if s.TE < 20:
+                assign = pdw_pdt2
+            elif 90 < s.TE < 110:
+                assign = t2w_pdt2
+        elif 'DE-GE' in name.upper():
             assign = de_ge
         if assign:
             print("YYYYY to %r", assign)

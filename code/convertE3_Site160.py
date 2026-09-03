@@ -27,7 +27,7 @@ def infotodict(seqinfo):
             continue
 
         assign = None
-        name = s.series_description or s.protocol_name or ""
+        name = s.series_description or s.protocol_name
 
         # Classification logic based on TE, TR, dimensions
         if 'SMARTBRAIN' in name.upper():

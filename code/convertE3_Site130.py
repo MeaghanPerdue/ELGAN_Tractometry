@@ -19,13 +19,15 @@ def infotodict(seqinfo):
     """
 
     t1w_mprage =   create_key('sub-{subject}/{session}/anat/sub-{subject}_{session}_T1w')
+    t1w_mprage_norm =   create_key('sub-{subject}/{session}/anat/sub-{subject}_{session}_rec-NORM_T1w')
     t1w_se =       create_key('sub-{subject}/{session}/anat/sub-{subject}_{session}_acq-se_T1w')
     t2w_pdt2 =     create_key('sub-{subject}/{session}/anat/sub-{subject}_{session}_acq-PDT2_T2w')
     pdw_pdt2 =     create_key('sub-{subject}/{session}/anat/sub-{subject}_{session}_acq-PDT2_PDw')
-    dwi_16dir =    create_key('sub-{subject}/{session}/dwi/sub-{subject}_{session}_dwi')
-    dwi_16dir_vec2 = create_key('sub-{subject}/{session}/dwi/sub-{subject}_{session}_acq-vector2_dwi')
+    dwi_sbref =    create_key('sub-{subject}/{session}/fmap/sub-{subject}_{session}_acq-sbref_dir-AP_epi')
+    dwi_16dir =    create_key('sub-{subject}/{session}/dwi/sub-{subject}_{session}_dir-AP_dwi')
+    dwi_16dir_vec2 = create_key('sub-{subject}/{session}/dwi/sub-{subject}_{session}_acq-vector2_dir-AP_dwi')
     rest =         create_key('sub-{subject}/{session}/func/sub-{subject}_{session}_task-rest_bold')
-    bold_sbref =   create_key('sub-{subject}/{session}/fmap/sub-{subject}_{session}_acq-sbref_epi')
+    bold_sbref =   create_key('sub-{subject}/{session}/fmap/sub-{subject}_{session}_acq-sbref_dir-AP_epi')
     de_ge =        create_key('sub-{subject}/{session}/anat/sub-{subject}_{session}_MEGRE')
 
     data = create_key('run{item:03d}')
@@ -64,24 +66,28 @@ def infotodict(seqinfo):
         assign = None
         name = s.series_description or s.protocol_name
 
-        # if 'GE-EPI' in name and s.dim4 == 270:
-        #     assign = rest
-        # elif 'GE-EPI' in name and s.dim4 == 1:
-        #     assign = bold_sbref
-        # elif 'T1w_MPR' in name and 'NORM' in s.image_type:
-        #     assign = t1w_mprage
-        # elif 'T1W_SE' in name.upper() and s.TE < 30:
-        #     assign = t1w_se
-        # elif 'dMRI_16dir9rep_AP' in name and 'vector2' not in name and s.dim4 == 172:
-        #     assign = dwi_16dir
-        # elif 'dMRI_16dir9rep_AP' in name and 'vector2' in name and s.dim4 == 172:
-        #     assign = dwi_16dir_vec2
-        # elif 'DE-TSE' in name.upper(): 
-        #     if s.TE < 20:
-        #         assign = pdw_pdt2
-        #     elif 90 < s.TE < 110:
-        #         assign = t2w_pdt2
-        if 'DE-GE' in name.upper():
+        if 'GE-EPI' in name and s.dim4 == 270:
+            assign = rest
+        elif 'GE-EPI' in name and s.dim4 == 1:
+            assign = bold_sbref
+        elif 'MPRAGE' in name.upper() or 'T1W_MPR' in name.upper() and 'ORIGINAL' in s.image_type and 'NORM' not in s.image_type:
+            assign = t1w_mprage
+        elif 'MPRAGE' in name.upper() or 'T1W_MPR' in name.upper() and 'NORM' in s.image_type:
+            assign = t1w_mprage_norm
+        elif 'TSE_TB' in name.upper() and s.TE < 30:
+            assign = t1w_se
+        elif 'DMRI_SBREF' in name.upper():
+            assign = dwi_sbref
+        elif 'dMRI' in name and 'VECTOR2' not in name.upper() and s.dim4 == 172:
+            assign = dwi_16dir
+        elif 'dMRI' in name and 'VECTOR2' in name.upper() and s.dim4 == 172:
+            assign = dwi_16dir_vec2
+        elif 'DE-TSE' in name.upper(): 
+            if s.TE < 20:
+                assign = pdw_pdt2
+            elif 90 < s.TE < 110:
+                assign = t2w_pdt2
+        elif 'T2W-GE' in name.upper():
             assign = de_ge
         if assign:
             print("YYYYY to %r", assign)
