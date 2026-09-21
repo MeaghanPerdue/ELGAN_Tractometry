@@ -1,0 +1,176 @@
+#' 1D Threshold-Free Cluster Enhancement (TFCE) for tractometry node profiles
+
+Implements TFCE (Smith & Nichols, 2009) adapted to a 1D array of along-tract
+nodes (e.g., 100 pyAFQ/AFQ-Insight nodes per tract), combined with a
+restricted (family-block) permutation test for family-wise error control
+across nodes -- avoiding both the arbitrary single-threshold problem AND
+respecting sibling/family clustering assumed by a `(1 | FamilyID)` random
+effect in the node-wise model.
+
+Typical workflow:
+  1. Fit your node-wise mixed model (e.g., fa ~ IQ + AgeMRI + GestationalAge
+      + Sex + (1 | FamilyID)) once per node on the real data to get an
+      observed statistic profile (t-values for IQ), via `nodewise_lmer()`.
+   2. Convert that profile to a TFCE score profile with `tfce_1d()`.
+   3. Repeat 1-2 many times with IQ permuted via family-block restricted
+      permutation (`family_block_permutation()`), recording max |TFCE|
+      each time (`permutation_test_tfce()`).
+   4. Use the null distribution of max |TFCE| to assign a corrected
+      p-value to every node's observed TFCE score.
+
+  Run separately per tract (one contiguous chain of 100 nodes).
+
+## Load libraries
+```{r}
+library(lme4)
+library(dplyr)
+```
+
+## 1. Core TFCE computation on a 1D stat profile
+
+```{r}
+#' TFCE contribution from the positive tail of `stat` only.
+#' NA entries (missing nodes) break cluster contiguity rather than counting
+#' as zero.
+.tfce_one_sign <- function(stat, E, H, n_steps) {
+  n <- length(stat)
+  tfce <- numeric(n)
+
+  valid <- !is.na(stat)
+  if (!any(valid)) return(tfce)
+
+  pos_vals <- stat[valid]
+  max_stat <- if (any(pos_vals > 0)) max(pos_vals) else 0
+  if (max_stat <= 0) return(tfce)
+
+  thresholds <- seq(max_stat / n_steps, max_stat, length.out = n_steps)
+  dh <- if (n_steps > 1) thresholds[2] - thresholds[1] else max_stat
+
+  for (h in thresholds) {
+    supra <- ifelse(valid, stat >= h, FALSE)
+    if (!any(supra)) next
+
+    # find contiguous runs of TRUE in `supra`
+    padded <- c(FALSE, supra, FALSE)
+    diffs <- diff(as.integer(padded))
+    starts <- which(diffs == 1)       # 1-indexed start of run (in padded coords)
+    ends <- which(diffs == -1) - 1    # 1-indexed end of run (in padded coords)
+    # padded coords are shifted by +1 relative to `stat`, so index n in
+    # `stat` corresponds to index n+1 in `padded` -- starts/ends above are
+    # already in `stat`-index terms after the -0 / -1 adjustment: starts
+    # (from padded, 1-indexed) map directly to stat 1-indexed start; ends
+    # computed as (which(diffs==-1) - 1) map directly to stat 1-indexed end.
+
+    for (i in seq_along(starts)) {
+      s <- starts[i]
+      e <- ends[i]
+      extent <- e - s + 1
+      contribution <- (extent ^ E) * (h ^ H) * dh
+      tfce[s:e] <- tfce[s:e] + contribution
+    }
+  }
+
+  tfce
+}
+
+#' Compute the signed 1D TFCE score at every node from a node-wise statistic
+#' profile (e.g., t-values from a node-wise regression).
+#'
+#' @param stat Numeric vector of length n_nodes. Node-wise test statistic
+#'   (t-value, z-value, etc). Sign matters -- positive and negative effects
+#'   are enhanced separately. Use NA for missing/invalid nodes; these break
+#'   cluster contiguity rather than being treated as stat = 0.
+#' @param E,H TFCE extent and height exponents. E=0.5, H=2.0 are the FSL /
+#'   Smith & Nichols (2009) defaults, used here as a reasonable default --
+#'   there is no tractometry-specific validated setting, so treat these as
+#'   adjustable and consider a sensitivity check across a couple of (E, H)
+#'   pairs alongside a cluster/threshold sensitivity check.
+#' @param n_steps Number of threshold steps for the numerical integral over
+#'   height. 100 is fine-grained enough for a ~100-node profile.
+#' @param two_sided If TRUE (default), compute TFCE separately for the
+#'   positive and negative tails and return their difference (positive minus
+#'   negative), preserving sign. If FALSE, only the positive tail is enhanced.
+#' @return Numeric vector of length n_nodes, signed TFCE-enhanced scores.
+#'   Nodes that were NA in `stat` remain NA.
+tfce_1d <- function(stat, E = 0.5, H = 2.0, n_steps = 100, two_sided = TRUE) {
+  stat <- as.numeric(stat)
+  pos_tfce <- .tfce_one_sign(stat, E, H, n_steps)
+
+  if (two_sided) {
+    neg_tfce <- .tfce_one_sign(-stat, E, H, n_steps)
+    tfce <- pos_tfce - neg_tfce
+  } else {
+    tfce <- pos_tfce
+  }
+
+  tfce[is.na(stat)] <- NA
+  tfce
+}
+```
+
+
+## 2. Node-wise mixed-effects regression, run once per node across a tract
+
+```{r}
+#' Fit a random-intercept mixed model independently at every node of a
+#' single tract, and return the node-wise t-value for `var_of_interest`.
+#'
+#' This is the R/lme4 equivalent of a per-node LMER such as:
+#'   fa ~ IQ + AgeMRI + GestationalAge + Sex + (1 | FamilyID)
+#' fit separately at each of the 100 nodes.
+#'
+#' @param df Long-format data for ONE tract: one row per subject per node.
+#'   Must contain `node_col`, `group_col`, and all variables in `fixed_formula`.
+#' @param fixed_formula A formula string for the FIXED effects only, e.g.
+#'   "fa ~ IQ + AgeMRI + GestationalAge + Sex" -- the random-effect term is
+#'   added automatically from `group_col`.
+#' @param var_of_interest Name of the fixed-effect coefficient (as lme4 will
+#'   report it -- check `names(fixef(fit))` once if unsure, e.g. for a
+#'   factor term) whose node-wise t-value you want back.
+#' @param group_col Column defining the random-intercept grouping variable
+#'   (e.g. "FamilyID").
+#' @param node_col Column identifying node position (0..n_nodes-1, or
+#'   1..n_nodes -- just be consistent with `n_nodes` and the node values
+#'   actually present in `df`).
+#' @param n_nodes Total number of nodes in the tract (100 for standard
+#'   pyAFQ/AFQ-Insight output).
+#' @param min_rows Minimum rows required at a node to attempt a fit.
+#' @return Numeric vector of length n_nodes; NA at nodes with insufficient
+#'   data or a convergence/singularity failure.
+
+nodewise_lmer <- function(df, fixed_formula, var_of_interest, group_col,
+                           node_col = "nodeID", n_nodes = 100, min_rows = 10) {
+  stat_profile <- rep(NA_real_, n_nodes)
+  full_formula <- as.formula(
+    paste(fixed_formula, "+ (1 |", group_col, ")")
+  )
+  node_values <- sort(unique(df[[node_col]]))
+
+  for (node in node_values) {
+    node_df <- df[df[[node_col]] == node, ]
+    if (nrow(node_df) < min_rows) next
+
+    fit <- tryCatch({
+      # suppress the routine singular-fit / convergence messages here;
+      # they're summarized separately after the full permutation run
+      # rather than printed per node per permutation
+      suppressMessages(suppressWarnings(
+        lmer(full_formula, data = node_df, REML = TRUE,
+             control = lmerControl(check.conv.singular = "ignore"))
+      ))
+    }, error = function(e) NULL)
+
+    if (is.null(fit)) next
+
+    coefs <- summary(fit)$coefficients
+    if (!(var_of_interest %in% rownames(coefs))) next
+
+    # index 1..n_nodes assuming node_values are 0-indexed contiguous or
+    # 1-indexed contiguous; store by position to stay robust to either
+    idx <- match(node, node_values)
+    stat_profile[idx] <- coefs[var_of_interest, "t value"]
+  }
+
+  stat_profile
+}
+```
