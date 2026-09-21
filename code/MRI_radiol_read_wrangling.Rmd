@@ -1,7 +1,7 @@
 ---
 title: "ELGAN3 MRI Radiological Read Wrangling"
 author: "Meaghan Perdue"
-date: "8/20/2026"
+date: "9/21/2026"
 output: html_document
 ---
 
@@ -17,31 +17,10 @@ library(fuzzyjoin)
 ```{r read data}
 base_path<-"/Volumes/LaCie/Projects/elgan_dti/data"
 
-dti<-read.csv(file.path(base_path, "afq_include.csv"))
-
-raw <- read.csv(file.path(base_path, "elgan3_mri_radiolread.csv"))
-
-mri <- raw %>%
-  filter(
-    if_any(
-      -id,
-      ~ coalesce(trimws(as.character(.)), "") != ""
-    )
-  )
-
-# Check for duplicate IDs
-dup_ids <- mri %>%
-            count(id) %>%
-            filter(n > 1)
-print(dup_ids)
-
-## Note - this data is indexed by family ID not subject, ID, so there are duplicates! Need to get a re-export to confirm data. For now, doing a quick look at how many subjects have abnormalities, ignoring who is who
-
-
-
-
-
-
+# Read MRI radiological reports and add to subs
+mri<-read.csv(file.path(base_path, "demog_beh", "MRI083126.csv")) %>%
+  select(-c("MRIReadDate", "age_mri", "MRISite", "MRIAgrOrCon", "SESPrCMarSta", "SESUseMedSta", "SESIncFodStm"))
+  colnames(mri)[1]<-"sid"
 
 ```
 
@@ -50,45 +29,36 @@ print(dup_ids)
 ```{r count}
 # Create a new variable to indicate whether ANY abnormalities were indicated
 
-## first, reindex variables graded as 1=none, 2=mild, etc. to 0=none:
+## first, reindex variables graded as 1=none, 2=mild, etc. to 0=none/mild, 1=moderate,severe:
 
 mri <- mri %>%
   mutate(across(
     c(MRICSFVSLVRi, MRICSFVSLVLe, MRICSFVS3rdV, MRICSFVS4thV,
       MRICSFSSACRi, MRICSFSSACLe, MRICSFSSPCRi, MRICSFSSPCLe,
       MRICSFSSPFRi, MRICSFSSPFLe),
-    ~ replace(.x, .x == 1, 0)
+    ~ case_when(
+      .x == 0        ~ NA_real_,
+      .x %in% c(1, 2) ~ 0,
+      .x > 2          ~ 1,
+      TRUE            ~ .x
+    )
   ))
 
-## then create new variable where any value of 1 across the row results in 1 for 'abnormality'
+## then create new variable where any value greater than 1 across the row results in 1 for 'abnormality'
 
 mri <- mri %>%
   mutate(
     mri_abnorm_any = as.integer(
-      rowSums(across(-id) > 0, na.rm = TRUE) > 0
+      rowSums(across(-sid) > 1, na.rm = TRUE) > 0
     )
   )
 
 ## Check N with any abnormality
 sum(mri$mri_abnorm_any)
 
-# filter down to dataset of participants with some abnormality plus duplicate IDs
+## Save dataframe with summary output
+write.csv(mri, "/Volumes/LaCie/Projects/elgan_dti/data/demog_beh/MRI083126_summaryVar.csv", row.names=FALSE)
 
-abn <- mri %>%
-          filter(mri_abnorm_any > 0) %>%
-          distinct()
-
-# Check for duplicate IDs in abn subset
-dup_ids_abn <- abn %>%
-            count(id) %>%
-            filter(n > 1)
-print(dup_ids_abn)
-
-dti_abn <- fuzzy_inner_join(
-  abn, dti,
-  by = "id",
-  match_fun = function(x, y) str_detect(y, fixed(x))
-) 
 
 ```
 
