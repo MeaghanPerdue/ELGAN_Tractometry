@@ -1,0 +1,200 @@
+---
+title: "Tractable Test"
+output: html_notebook
+---
+
+Testing Tractable to run GAMs on pyAFQ tractometry outputs with Elgan3 UMMS data
+
+# Load libraries
+```{r setup}
+library(tractable)
+library(dplyr)
+library(ggplot2)
+```
+
+# Load data - AFQ waypoints tracts
+
+```{r}
+# Read AFQ tract profiles data
+
+afq_prob<-read.csv("/Volumes/LaCie/Projects/elgan_dti/data/Site-330/derivatives/afq/tract_profiles.csv")
+afq_prob_clip<-read.csv("/Volumes/LaCie/Projects/elgan_dti/data/Site-330/derivatives/afq_prob_clip/tract_profiles.csv")
+afq_det<-read.csv("/Volumes/LaCie/Projects/elgan_dti/data/Site-330/derivatives/afq_det/tract_profiles.csv")
+afq_det_clip<-read.csv("/Volumes/LaCie/Projects/elgan_dti/data/Site-330/derivatives/afq_det_clip/tract_profiles.csv")
+
+
+# add columns for tractography method and end-clipping
+afq_prob$tractography<-"prob"
+afq_prob$clip_ends<-"no"
+
+afq_prob_clip$tractography<-"prob"
+afq_prob_clip$clip_ends<-"yes"
+
+afq_det$tractography<-"det"
+afq_det$clip_ends<-"no"
+
+afq_det_clip$tractography<-"det"
+afq_det_clip$clip_ends<-"yes"
+
+
+
+# bind into single dataframe
+afq_prob_all<-bind_rows(afq_prob, afq_prob_clip)
+
+afq_det_all<-bind_rows(afq_det, afq_det_clip)
+
+afq_noclip<-bind_rows(afq_prob, afq_det)
+
+afq_clip<-bind_rows(afq_prob_clip, afq_det_clip)
+
+
+
+# filter out poor quality data
+#subs<-read.table("/Volumes/LaCie/Projects/elgan_dti/code/tmpsubs.txt")
+
+#filtered_afqtracts <- afqtracts %>% filter(subjectID %in% subs$V1)
+
+```
+
+# Site and participant info
+```{r site info}
+
+total_subs<-afq_prob_all%>% distinct(subjectID) %>% nrow()
+print(total_subs)
+# n=20 total
+
+
+```
+
+# Plot Profiles 
+## Compare with and without end-clipping (illustrative purpose, we know these will not align properly)
+```{r plot by site}
+
+plot_fa_prob_by_clip <- plot_tract_profiles(
+  df = afq_prob_all,
+  y = c("dti_fa"),
+  tracts = c("Callosum Orbital", "Callosum Anterior Frontal", "Callosum Superior Frontal", "Callosum Motor", "Callosum Superior Parietal", "Callosum Posterior Parietal", "Callosum Occipital", "Left Corticospinal", "Right Corticospinal", "Left Cingulum Cingulate", "Right Cingulum Cingulate","Left Anterior Thalamic", "Right Anterior Thalamic", "Left Inferior Longitudinal", "Right Inferior Longitudinal", "Left Inferior Fronto-occipital", "Right Inferior Fronto-occipital", "Left Superior Longitudinal", "Right Superior Longitudinal", "Left Arcuate", "Right Arcuate"),
+  group_col = "clip_ends",
+  group_pal = "cbb",
+  save_figure = FALSE)
+plot_fa_prob_by_clip
+
+
+plot_fa_det_by_clip <- plot_tract_profiles(
+  df = afq_det_all,
+  y = c("dti_fa"),
+  tracts = c("Callosum Orbital", "Callosum Anterior Frontal", "Callosum Superior Frontal", "Callosum Motor", "Callosum Superior Parietal", "Callosum Posterior Parietal", "Callosum Occipital", "Left Corticospinal", "Right Corticospinal", "Left Cingulum Cingulate", "Right Cingulum Cingulate","Left Anterior Thalamic", "Right Anterior Thalamic", "Left Inferior Longitudinal", "Right Inferior Longitudinal", "Left Inferior Fronto-occipital", "Right Inferior Fronto-occipital", "Left Superior Longitudinal", "Right Superior Longitudinal", "Left Arcuate", "Right Arcuate"),
+  group_col = "clip_ends",
+  group_pal = "cbb",
+  save_figure = FALSE)
+plot_fa_det_by_clip
+
+```
+## Compare probabilistic vs deterministic tractography
+```{r plot by site}
+
+plot_fa_noclip_by_tractography <- plot_tract_profiles(
+  df = afq_noclip,
+  y = c("dti_fa"),
+  tracts = c("Callosum Orbital", "Callosum Anterior Frontal", "Callosum Superior Frontal", "Callosum Motor", "Callosum Superior Parietal", "Callosum Posterior Parietal", "Callosum Occipital", "Left Corticospinal", "Right Corticospinal", "Left Cingulum Cingulate", "Right Cingulum Cingulate","Left Anterior Thalamic", "Right Anterior Thalamic", "Left Inferior Longitudinal", "Right Inferior Longitudinal", "Left Inferior Fronto-occipital", "Right Inferior Fronto-occipital", "Left Superior Longitudinal", "Right Superior Longitudinal", "Left Arcuate", "Right Arcuate"),
+  group_col = "tractography",
+  group_pal = "cbb",
+  save_figure = FALSE)
+plot_fa_noclip_by_tractography
+
+
+plot_fa_clip_by_tractography <- plot_tract_profiles(
+  df = afq_clip,
+  y = c("dti_fa"),
+  tracts = c("Callosum Orbital", "Callosum Anterior Frontal", "Callosum Superior Frontal", "Callosum Motor", "Callosum Superior Parietal", "Callosum Posterior Parietal", "Callosum Occipital", "Left Corticospinal", "Right Corticospinal", "Left Cingulum Cingulate", "Right Cingulum Cingulate","Left Anterior Thalamic", "Right Anterior Thalamic", "Left Inferior Longitudinal", "Right Inferior Longitudinal", "Left Inferior Fronto-occipital", "Right Inferior Fronto-occipital", "Left Superior Longitudinal", "Right Superior Longitudinal", "Left Arcuate", "Right Arcuate"),
+  group_col = "tractography",
+  group_pal = "cbb",
+  save_figure = FALSE)
+plot_fa_clip_by_tractography
+
+```
+
+# Fit GAMs by tract - AFQ Waypoints Tracts
+Make sure node group variable and subjectID are set as factors, else an error will occur
+
+
+
+### FDR correction for FSIQ models
+```{r FDR corr}
+tracts<-c("CC Anterior Frontal", "CC Motor", "CC Occipital", "CC Orbital", "CC Posterior Parietal", "CC Superior Frontal", "CC Superior Parietal","Left Anterior Thalamic", "Right Anterior Thalamic", "Left Arcuate", "Right Arcuate", "Left Cingulum", "Right Cingulum", "Left Corticospinal", "Right Corticospinal", "Left Inferior Fronto-Occipital", "Right Inferior Fronto-Occipital", "Left Inferior Longitudinal", "Right Inferior Longitudinal", "Left Superior Longitudinal", "Right Superior Longitudinal")
+
+fitcoef<-c(CCant_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          CCmot_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          CCocc_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          CCorb_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          CCpostp_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          CCsupf_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          CCsuppar_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          LATh_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          RATh_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          LAF_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          RAF_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          LCing_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          RCing_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          LCST_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          RCST_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          LIFO_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          RIFO_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          LILF_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          RILF_iq_summary[["p.coeff"]][["fsiq_low1"]],
+          LSLF_iq_summary[["p.coeff"]][["fsiq_low1"]], 
+          RSLF_iq_summary[["p.coeff"]][["fsiq_low1"]])
+
+tvals<-c(CCant_iq_summary[["p.t"]][["fsiq_low1"]],
+          CCmot_iq_summary[["p.t"]][["fsiq_low1"]],
+          CCocc_iq_summary[["p.t"]][["fsiq_low1"]],
+          CCorb_iq_summary[["p.t"]][["fsiq_low1"]],
+          CCpostp_iq_summary[["p.t"]][["fsiq_low1"]],
+          CCsupf_iq_summary[["p.t"]][["fsiq_low1"]],
+          CCsuppar_iq_summary[["p.t"]][["fsiq_low1"]],
+          LATh_iq_summary[["p.t"]][["fsiq_low1"]],
+          RATh_iq_summary[["p.t"]][["fsiq_low1"]],
+          LAF_iq_summary[["p.t"]][["fsiq_low1"]],
+          RAF_iq_summary[["p.t"]][["fsiq_low1"]],
+          LCing_iq_summary[["p.t"]][["fsiq_low1"]],
+          RCing_iq_summary[["p.t"]][["fsiq_low1"]],
+          LCST_iq_summary[["p.t"]][["fsiq_low1"]],
+          RCST_iq_summary[["p.t"]][["fsiq_low1"]],
+          LIFO_iq_summary[["p.t"]][["fsiq_low1"]],
+          RIFO_iq_summary[["p.t"]][["fsiq_low1"]],
+          LILF_iq_summary[["p.t"]][["fsiq_low1"]],
+          RILF_iq_summary[["p.t"]][["fsiq_low1"]],
+          LSLF_iq_summary[["p.t"]][["fsiq_low1"]], 
+          RSLF_iq_summary[["p.t"]][["fsiq_low1"]])
+
+pvals<-c( CCant_iq_summary[["p.pv"]][["fsiq_low1"]],
+          CCmot_iq_summary[["p.pv"]][["fsiq_low1"]],
+          CCocc_iq_summary[["p.pv"]][["fsiq_low1"]],
+          CCorb_iq_summary[["p.pv"]][["fsiq_low1"]],
+          CCpostp_iq_summary[["p.pv"]][["fsiq_low1"]],
+          CCsupf_iq_summary[["p.pv"]][["fsiq_low1"]],
+          CCsuppar_iq_summary[["p.pv"]][["fsiq_low1"]],
+          LATh_iq_summary[["p.pv"]][["fsiq_low1"]],
+          RATh_iq_summary[["p.pv"]][["fsiq_low1"]],
+          LAF_iq_summary[["p.pv"]][["fsiq_low1"]],
+          RAF_iq_summary[["p.pv"]][["fsiq_low1"]],
+          LCing_iq_summary[["p.pv"]][["fsiq_low1"]],
+          RCing_iq_summary[["p.pv"]][["fsiq_low1"]],
+          LCST_iq_summary[["p.pv"]][["fsiq_low1"]],
+          RCST_iq_summary[["p.pv"]][["fsiq_low1"]],
+          LIFO_iq_summary[["p.pv"]][["fsiq_low1"]],
+          RIFO_iq_summary[["p.pv"]][["fsiq_low1"]],
+          LILF_iq_summary[["p.pv"]][["fsiq_low1"]],
+          RILF_iq_summary[["p.pv"]][["fsiq_low1"]],
+          LSLF_iq_summary[["p.pv"]][["fsiq_low1"]], 
+          RSLF_iq_summary[["p.pv"]][["fsiq_low1"]])
+
+pfdr<-p.adjust(pvals, method = "fdr", n=length(pvals))
+
+results_iq<-data_frame(tracts, fitcoef, tvals, pvals, pfdr)
+
+write.csv(results_iq, "/Users/meaghan/Library/CloudStorage/OneDrive-UMassChanMedicalSchool/ELGAN/ELGAN_Tractometry/abstracts/ohbm_results.csv")
+
+
+```
+
