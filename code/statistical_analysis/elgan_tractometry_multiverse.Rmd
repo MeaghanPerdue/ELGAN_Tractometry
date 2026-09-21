@@ -4,19 +4,55 @@ author: "Meaghan Perdue"
 date: "9/21/2026"
 output: html_document
 ---
+# Tractometry multiverse analysis ELGAN3
+This code performs tractmetry analysis on harmonized ELGAN3 pyAFQ data. Picks up following harmonization of ELGAN tractometry data across sites and calculation of PCA factor scores for NIH Toolbox Cognition Battery
 
+## Setup
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
 ```
 
-## R Markdown
+## Read data
+Read harmonized data in AFQ-insight structure (subject-level plus node-level)
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+```{r}
+# Set home directory
+base_path<-"/Volumes/LaCie/Projects/elgan_dti/data"
 
-```{r cars}
-summary(cars)
+# Read harmonized pyAFQ data
+subs<-read.csv(file.path(base_path, "harmonized", "afq_prob", "harmonized_subjects.csv"))
+nodes<-read.csv(file.path(base_path, "harmonized", "afq_prob", "harmonized_nodes.csv"))
+
+# pull in sublist for ID matching and add to subs
+sublist<-read.csv(file.path(base_path, "demog_beh", "afq_include.csv")) %>%
+  select("subjectID", "sid")
+
+subs<-left_join(subs, sublist, by = "subjectID")
+
+# Read IQ and health data, add to subs
+demog<-read.csv(file.path(base_path, "demog_beh", "mergedcorrecteddata_cleaned_MP.csv")) %>%
+  select("sid", "ivhx", "plurality", "multip", "dx120_4_asd",	"dx120_5_cp", "epil", "iq85")
+
+subs<-left_join(subs, demog, by="sid")
+
+# Read NTCB factor scores and add to subs
+ntcb<-read.csv(file.path(base_path, "demog_beh", "nih_toolbox_factor_scores.csv"))
+  colnames(ntcb)[1]<-"subjectID"
+
+subs<-left_join(subs, ntcb, by="subjectID")
+
+# Read MRI Radiology Reports and add 'abnormal' indicator to subs
+mri<-read.csv(file.path(base_path, "demog_beh", "MRI083126_summaryVar.csv") %>%
+      select("sid", "mri_abnorm_any")
+
+subs<-left_join(subs, mri, by="sid")
+
+
+
+
 ```
 
 ## Including Plots
