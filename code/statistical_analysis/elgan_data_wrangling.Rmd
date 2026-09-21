@@ -1,0 +1,413 @@
+---
+title: "Tractable Test"
+output: html_notebook
+---
+
+Tractable GAMs on pyAFQ tractometry outputs with Elgan3 UMMS data
+
+## Compile and summarize demographic data
+Databases compiled here are used as input for harmonization via AFQ-Insight. 
+See harmonize_elgansites.py
+```{r demographics}
+library(tidyverse)
+library(psych)
+
+base_path<-"/Volumes/LaCie/Projects/elgan_dti/data"
+
+sublist<-read.csv(file.path(base_path, "demog_beh", "afq_include.csv"))
+# use mri_age from here based on gathering data from elgan_demog_data.csv and Age at Date of MRI
+
+demog<-read.csv(file.path(base_path, "demog_beh", "mergedcorrecteddata_cleaned_MP.csv")) %>%
+  select("sid", "bw", "sex", "female", "ivhx", "gadays", "plurality", "multip", "dx120_4_asd",	"dx120_5_cp", "epil", "iq85")
+
+demog2<-read.csv(file.path(base_path, "demog_beh", "elgan_demog_data.csv")) %>%
+  select("sid", "develop", "FSIQ2", "srs15")
+
+tmp<-left_join(sublist, demog, by="sid")
+
+subinfo<-left_join(tmp, demog2, by="sid")
+
+# combine diagnosis variables based on McNaughton paper method: ASD, CP, Epilepsy, or IQ<85
+
+subinfo <- subinfo |>
+  mutate(ndd = as.integer(
+    (dx120_4_asd > 0 & !is.na(dx120_4_asd)) | 
+    (dx120_5_cp  > 0 & !is.na(dx120_5_cp))  | 
+    (epil        > 0 & !is.na(epil)) |
+    (iq85        > 0 & !is.na(iq85))  
+  ))
+
+subinfo <- subinfo |>
+  mutate(lowiq = as.integer(
+    (FSIQ2 <70 & !is.na(FSIQ2)) 
+  ))
+
+
+## create median split variables
+
+# Calculate the median of 'ga_days', excluding NAs
+median_bw <- median(subinfo$bw, na.rm = TRUE)
+
+# Create the 'bw_group' column
+subinfo$bw_group <- ifelse(is.na(subinfo$bw), NA, ifelse(subinfo$bw > median_bw, "High", "Low"))
+
+# Optionally convert to factor
+subinfo$bw_group <- factor(subinfo$bw_group, levels = c("Low", "High"))
+
+# Calculate the median of 'ga_days', excluding NAs
+median_ga <- median(subinfo$gadays, na.rm = TRUE)
+
+# Create the 'ga_group' column
+subinfo$ga_group <- ifelse(subinfo$gadays > median_ga, "High", "Low")
+
+
+# read in QSIprep QC data and select relevant columns
+qc<-read.csv(file.path(base_path, "qsiprep_qc_combined.csv")) %>%
+  mutate(
+    subjectID = str_remove(subjectID, "^sub-"),
+    sessionID = str_remove(sessionID, "^ses-")
+  )
+
+# add QC data to subinfo
+subinfo<-left_join(subinfo, qc, by = "subjectID")
+
+# Filter out participants with mean framewise displacement >1mm
+subinfo_filtered<-subinfo %>%
+                    filter(mean_fd<=1)
+
+write.csv(subinfo_filtered, "/Volumes/LaCie/Projects/elgan_dti/data/ELGAN_tractometry_subinfo_filtered.csv", row.names=FALSE)
+
+```
+
+
+#Describe Data Participant Characteristics 
+```{r}
+## describe data
+
+subinfo_filtered %>% count(female)
+subinfo_filtered %>% count(ndd)
+subinfo_filtered %>% count(ivhx)
+subinfo_filtered %>% count(iq85) # coded from mergedandcorrected data sheet
+
+describe(subinfo_filtered)
+
+
+
+# describe subset with IQ data
+subinfo_IQsubset <- subinfo_filtered %>% 
+                        filter(!is.na(iq85))
+
+subinfo_IQsubset %>% count(female)
+subinfo_IQsubset %>% count(ndd)
+subinfo_IQsubset %>% count(ivhx)
+subinfo_IQsubset %>% count(iq85) # coded from mergedandcorrected data sheet
+
+describe(subinfo_IQsubset)
+
+```
+
+# Load data - AFQ waypoints tracts
+
+```{r}
+
+library(tidyverse)
+
+# Define base path and site IDs
+base_path <- "/Volumes/LaCie/Projects/elgan_dti/data"
+sites <- c("site-120", "site-130", "site-140", "site-150", "site-160",
+           "site-170", "site-220", "site-230", "site-310", "site-320", "site-330")
+
+# Build file paths
+tract_profile_paths <- file.path(base_path, sites, "derivatives", "afq", "tract_profiles.csv")
+
+# Name the vector so site labels are preserved
+names(tract_profile_paths) <- sites
+
+# Vendor lookup
+vendor_map <- c(
+  "site-120" = "Siemens",
+  "site-130" = "Siemens",
+  "site-140" = "Siemens",      
+  "site-150" = "Philips",
+  "site-160" = "Philips",
+  "site-170" = "Siemens",
+  "site-220" = "Siemens",
+  "site-230" = "Siemens",
+  "site-310" = "GE",
+  "site-320" = "GE",
+  "site-330" = "Philips"
+)
+
+# Read and combine, adding 'site' and 'vendor' columns
+tract_profiles_combined <- tract_profile_paths |>
+  map(\(path) {
+    if (file.exists(path)) {
+      read_csv(path, show_col_types = FALSE, col_types = cols(.default = "c"))
+    } else {
+      warning(paste("File not found:", path))
+      NULL
+    }
+  }) |>
+  compact() |>
+  list_rbind(names_to = "site") |>
+  mutate(vendor = vendor_map[site]) |>
+  type_convert()
+
+# Preview
+glimpse(tract_profiles_combined)
+
+# Add demographic data to tract profiles
+elgan_afq_prob<-inner_join(tract_profiles_combined, subinfo_filtered, by = "subjectID")
+
+write.csv(elgan_afq_prob, "/Volumes/LaCie/Projects/elgan_dti/data/ELGAN_afq_prob_filtered.csv", row.names=FALSE)
+
+
+# Load database for analysis
+elgan_afq_prob <- read.csv("/Volumes/LaCie/Projects/elgan_dti/data/ELGAN_afq_prob_filtered.csv") 
+
+elgan_afq_prob <- elgan_afq_prob %>%
+  mutate(across(c(subjectID, sex, ndd, lowiq, female, site, vendor, ivhx, iq85, ga_group, bw_group), as.factor)) |>
+  mutate(across(c(dti_fa, dti_md), as.numeric))
+
+
+```
+
+## Load Deterministic AFQ data and compile
+```{r}
+# Define base path and site IDs
+base_path <- "/Volumes/LaCie/Projects/elgan_dti/data"
+sites <- c("site-120", "site-130", "site-140", "site-150", "site-160",
+           "site-170", "site-220", "site-230", "site-310", "site-320", "site-330")
+
+# Build file paths
+tract_profile_paths <- file.path(base_path, sites, "derivatives", "afq_det", "tract_profiles.csv")
+
+# Name the vector so site labels are preserved
+names(tract_profile_paths) <- sites
+
+# Vendor lookup
+vendor_map <- c(
+  "site-120" = "Siemens",
+  "site-130" = "Siemens",
+  "site-140" = "Siemens",      
+  "site-150" = "Philips",
+  "site-160" = "Philips",
+  "site-170" = "Siemens",
+  "site-220" = "Siemens",
+  "site-230" = "Siemens",
+  "site-310" = "GE",
+  "site-320" = "GE",
+  "site-330" = "Philips"
+)
+
+# Read and combine, adding 'site' and 'vendor' columns
+det_tract_profiles_combined <- tract_profile_paths |>
+  map(\(path) {
+    if (file.exists(path)) {
+      read_csv(path, show_col_types = FALSE, col_types = cols(.default = "c"))
+    } else {
+      warning(paste("File not found:", path))
+      NULL
+    }
+  }) |>
+  compact() |>
+  list_rbind(names_to = "site") |>
+  mutate(vendor = vendor_map[site]) |>
+  type_convert()
+
+
+# Add demographic data to tract profiles
+elgan_afq_det<-inner_join(det_tract_profiles_combined, subinfo_filtered, by = "subjectID")
+
+write.csv(elgan_afq_det, "/Volumes/LaCie/Projects/elgan_dti/data/ELGAN_afq_det_filtered.csv", row.names=FALSE)
+
+
+# Load database for analysis
+#elgan_afq_det <- read.csv("/Volumes/LaCie/Projects/elgan_dti/data/ELGAN_afq_det_filtered.csv") 
+
+elgan_afq_det <- elgan_afq_det %>%
+  mutate(across(c(subjectID, sex, ndd, lowiq, female, site, vendor, ivhx, iq85, ga_group, bw_group), as.factor)) |>
+  mutate(across(c(dti_fa, dti_md), as.numeric))
+```
+
+## Load AFQ Probabilistic Ends-Clipped and compile
+```{r}
+# Define base path and site IDs
+base_path <- "/Volumes/LaCie/Projects/elgan_dti/data"
+sites <- c("site-120", "site-130", "site-140", "site-150", "site-160",
+           "site-170", "site-220", "site-230", "site-310", "site-320", "site-330")
+
+# Build file paths
+tract_profile_paths <- file.path(base_path, sites, "derivatives", "afq_prob_clip", "tract_profiles.csv")
+
+# Name the vector so site labels are preserved
+names(tract_profile_paths) <- sites
+
+# Vendor lookup
+vendor_map <- c(
+  "site-120" = "Siemens",
+  "site-130" = "Siemens",
+  "site-140" = "Siemens",      
+  "site-150" = "Philips",
+  "site-160" = "Philips",
+  "site-170" = "Siemens",
+  "site-220" = "Siemens",
+  "site-230" = "Siemens",
+  "site-310" = "GE",
+  "site-320" = "GE",
+  "site-330" = "Philips"
+)
+
+# Read and combine, adding 'site' and 'vendor' columns
+prob_clip_tract_profiles_combined <- tract_profile_paths |>
+  map(\(path) {
+    if (file.exists(path)) {
+      read_csv(path, show_col_types = FALSE, col_types = cols(.default = "c"))
+    } else {
+      warning(paste("File not found:", path))
+      NULL
+    }
+  }) |>
+  compact() |>
+  list_rbind(names_to = "site") |>
+  mutate(vendor = vendor_map[site]) |>
+  type_convert()
+
+
+# Add demographic data to tract profiles
+elgan_afq_prob_clip<-inner_join(prob_clip_tract_profiles_combined, subinfo_filtered, by = "subjectID")
+
+write.csv(elgan_afq_prob_clip, "/Volumes/LaCie/Projects/elgan_dti/data/ELGAN_afq_prob_clip_filtered.csv", row.names=FALSE)
+
+
+# Load database for analysis
+#elgan_afq_prob_clip <- read.csv("/Volumes/LaCie/Projects/elgan_dti/data/ELGAN_afq_prob_clip_filtered.csv") 
+
+elgan_afq_prob_clip <- elgan_afq_prob_clip %>%
+  mutate(across(c(subjectID, sex, ndd, lowiq, female, site, vendor, ivhx, iq85, ga_group, bw_group), as.factor)) |>
+  mutate(across(c(dti_fa, dti_md), as.numeric))
+```
+
+## Load deterministic-clipped ends and compile
+```{r}
+# Define base path and site IDs
+base_path <- "/Volumes/LaCie/Projects/elgan_dti/data"
+sites <- c("site-120", "site-130", "site-140", "site-150", "site-160",
+           "site-170", "site-220", "site-230", "site-310", "site-320", "site-330")
+
+# Build file paths
+tract_profile_paths <- file.path(base_path, sites, "derivatives", "afq_det_clip", "tract_profiles.csv")
+
+# Name the vector so site labels are preserved
+names(tract_profile_paths) <- sites
+
+# Vendor lookup
+vendor_map <- c(
+  "site-120" = "Siemens",
+  "site-130" = "Siemens",
+  "site-140" = "Siemens",      
+  "site-150" = "Philips",
+  "site-160" = "Philips",
+  "site-170" = "Siemens",
+  "site-220" = "Siemens",
+  "site-230" = "Siemens",
+  "site-310" = "GE",
+  "site-320" = "GE",
+  "site-330" = "Philips"
+)
+
+# Read and combine, adding 'site' and 'vendor' columns
+det_clip_tract_profiles_combined <- tract_profile_paths |>
+  map(\(path) {
+    if (file.exists(path)) {
+      read_csv(path, show_col_types = FALSE, col_types = cols(.default = "c"))
+    } else {
+      warning(paste("File not found:", path))
+      NULL
+    }
+  }) |>
+  compact() |>
+  list_rbind(names_to = "site") |>
+  mutate(vendor = vendor_map[site]) |>
+  type_convert()
+
+
+# Add demographic data to tract profiles
+elgan_afq_det_clip<-inner_join(det_clip_tract_profiles_combined, subinfo_filtered, by = "subjectID")
+
+write.csv(elgan_afq_det_clip, "/Volumes/LaCie/Projects/elgan_dti/data/ELGAN_afq_det_clip_filtered.csv", row.names=FALSE)
+
+
+# Load database for analysis
+#elgan_afq_det_clip <- read.csv("/Volumes/LaCie/Projects/elgan_dti/data/ELGAN_afq_det_clip_filtered.csv") 
+
+elgan_afq_det_clip <- elgan_afq_det_clip %>%
+  mutate(across(c(subjectID, sex, ndd, lowiq, female, site, vendor, ivhx, iq85, ga_group, bw_group), as.factor)) |>
+  mutate(across(c(dti_fa, dti_md), as.numeric))
+```
+
+## Check out QC differences by vendor, site, and analysis groups of interest
+
+```{r}
+## reduce dataframe to relevant columns with 1 row per subject
+df_qc<- elgan_afq_prob %>% 
+          select("subjectID", "vendor", "site", "female","iq85", "ga_group", "bw_group", 31:89) %>%
+          distinct()
+
+write.csv(df_qc, "/Volumes/LaCie/Projects/elgan_dti/data/qsiprep_qc_combined_vendor_site.csv", row.names=FALSE)
+      
+# Run ANOVA by Vendor
+
+summary(aov(CNR1_mean ~ vendor, dat=df_qc))
+
+ggplot(data=df_qc) +
+  geom_violin(aes(x=vendor, y=CNR1_mean))
+
+## post-hoc pairwise tests
+TukeyHSD(aov(CNR1_mean ~ vendor, data=df_qc))
+
+summary(aov(mean_fd ~ vendor, data=df_qc))
+
+summary(aov(mean_fd ~ vendor, data=df_qc))
+
+# Run ANOVA by Site
+summary(aov(CNR0_mean ~ site, data=df_qc))
+
+
+
+## Mean Framewise Displacement
+summary(aov(mean_fd ~ vendor, dat=df_qc))
+
+ggplot(data=df_qc) + 
+  geom_boxplot(aes(x=vendor, y=mean_fd)) +
+  theme_classic()
+
+summary(aov(mean_fd ~ site, dat=df_qc))
+
+ggplot(data=df_qc) +
+  geom_boxplot(aes(x=site, y=mean_fd)) +
+  theme_classic()
+
+## Raw number bad slices
+summary(aov(raw_num_bad_slices ~ vendor, dat=df_qc))
+
+ggplot(data=df_qc) + 
+  geom_boxplot(aes(x=vendor, y=raw_num_bad_slices)) +
+  theme_classic()
+
+summary(aov(raw_num_bad_slices ~ site, dat=df_qc))
+
+ggplot(data=df_qc) +
+  geom_boxplot(aes(x=site, y=raw_num_bad_slices)) +
+  theme_classic()
+
+## QC differences by IQ group
+t.test(mean_fd ~ iq85, dat=df_qc) ## NOT SIG
+
+t.test(mean_fd ~ ga_group, dat=df_qc)
+t.test(mean_fd ~ bw_group, dat=df_qc) ## p=.0495
+
+
+```
+
+
