@@ -1,5 +1,9 @@
 #' 1D Threshold-Free Cluster Enhancement (TFCE) for tractometry node profiles
 
+Code written with Claude Sonnet 5 AI 17 Sept. 2026
+Leaving this version as standalone code to pull into future pipelines. 
+Full analysis code for ELGAN manuscript is elgan_tractometry_multiverse.Rmd
+
 Implements TFCE (Smith & Nichols, 2009) adapted to a 1D array of along-tract
 nodes (e.g., 100 pyAFQ/AFQ-Insight nodes per tract), combined with a
 restricted (family-block) permutation test for family-wise error control
@@ -27,7 +31,7 @@ library(dplyr)
 ```
 
 ## 1. Core TFCE computation on a 1D stat profile
-
+Define function: tfce_1d
 ```{r}
 #' TFCE contribution from the positive tail of `stat` only.
 #' NA entries (missing nodes) break cluster contiguity rather than counting
@@ -110,7 +114,7 @@ tfce_1d <- function(stat, E = 0.5, H = 2.0, n_steps = 100, two_sided = TRUE) {
 
 
 ## 2. Node-wise mixed-effects regression, run once per node across a tract
-
+define function: nodewise_lmer()
 ```{r}
 #' Fit a random-intercept mixed model independently at every node of a
 #' single tract, and return the node-wise t-value for `var_of_interest`.
