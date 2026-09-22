@@ -24,6 +24,7 @@ base_path<-"/Volumes/LaCie/Projects/elgan_dti/data"
 
 # Read harmonized pyAFQ data
 subs<-read.csv(file.path(base_path, "harmonized", "afq_prob", "harmonized_subjects.csv"))
+
 nodes<-read.csv(file.path(base_path, "harmonized", "afq_prob", "harmonized_nodes.csv"))
 
 # pull in sublist for ID matching and add to subs
@@ -34,24 +35,33 @@ subs<-left_join(subs, sublist, by = "subjectID")
 
 # Read IQ and health data, add to subs
 demog<-read.csv(file.path(base_path, "demog_beh", "mergedcorrecteddata_cleaned_MP.csv")) %>%
-  select("sid", "ivhx", "plurality", "multip", "dx120_4_asd",	"dx120_5_cp", "epil", "iq85")
+  select("sid", "ivhx", "plurality", "multip", "dx120_4_asd",	"dx120_5_cp", "epil")
 
-subs<-left_join(subs, demog, by="sid")
+demog2<-read.csv(file.path(base_path, "demog_beh", "elgan_demog_data.csv")) %>%
+  select("sid", "develop", "FSIQ2", "srs15")
+
+tmp<-left_join(demog, demog2, by = "sid")
+
+subs<-left_join(subs, tmp, by="sid")
 
 # Read NTCB factor scores and add to subs
 ntcb<-read.csv(file.path(base_path, "demog_beh", "nih_toolbox_factor_scores.csv"))
-  colnames(ntcb)[1]<-"subjectID"
+
 
 subs<-left_join(subs, ntcb, by="subjectID")
 
 # Read MRI Radiology Reports and add 'abnormal' indicator to subs
-mri<-read.csv(file.path(base_path, "demog_beh", "MRI083126_summaryVar.csv") %>%
+mri<-read.csv(file.path(base_path, "demog_beh", "MRI083126_summaryVar.csv")) %>%
       select("sid", "mri_abnorm_any")
 
 subs<-left_join(subs, mri, by="sid")
 
+# Create family ID variable (famID) as a derivative of subject ID
+subs$famID <- as.factor(substr(as.character(subs$sid), 1, 6))
 
+# write aggregated subject-level data for use in all analyses:
 
+write.csv(subs, file.path(base_path, "demog_beh", "elgan_subject_level_data_for_tractometry.csv"), row.names = FALSE)
 
 ```
 
