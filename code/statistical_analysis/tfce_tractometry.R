@@ -261,9 +261,31 @@ permutation_test_tfce <- function(df, fixed_formula, var_of_interest,
   observed_stat <- nodewise_lmer(df, fixed_formula, var_of_interest,
                                   group_col = family_col, node_col = node_col,
                                   n_nodes = n_nodes)
+  n_na_nodes_observed <- sum(is.na(observed_stat))
+
+  if (n_na_nodes_observed == n_nodes) {
+    stop(paste0(
+      "nodewise_lmer() failed to fit a model at EVERY node (", n_nodes, "/", n_nodes, " NA) ",
+      "-- something is wrong before this ever reaches permutation testing. ",
+      "Most likely causes, in order of likelihood:\n",
+      "  1. `fixed_formula` variable name(s) with too many NAs (e.g., missing bw/gadays for ",
+      "     many subjects) pushing per-node sample size below `min_rows` (default 10) at every node.\n",
+      "  2. `family_col` ('", family_col, "') has near-singular structure for this tract's subset ",
+      "     (e.g., almost every family is a singleton after filtering), causing lmer() to fail to ",
+      "     converge or to error on the random-intercept term at every node.\n",
+      "  3. A typo/case mismatch between a variable name in `fixed_formula` and the actual column ",
+      "     name in `df` (check with names(df)).\n",
+      "  4. The tract subset itself is unexpectedly small or malformed -- check nrow(df), ",
+      "     length(unique(df$", node_col, ")), and table(df$", family_col, ") on just this tract's ",
+      "     data before re-running.\n",
+      "Try running nodewise_lmer() directly on a single node's subset with tryCatch(..., error = ",
+      "function(e) print(e)) (rather than the silent NULL fallback it uses inside the loop) to see ",
+      "the actual lme4 error message."
+    ))
+  }
+
   observed_tfce <- tfce_1d(observed_stat, E = E, H = H, n_steps = tfce_n_steps,
                             two_sided = two_sided)
-  n_na_nodes_observed <- sum(is.na(observed_stat))
 
   null_max_tfce <- numeric(n_permutations)
   perm_df <- df
@@ -290,10 +312,19 @@ permutation_test_tfce <- function(df, fixed_formula, var_of_interest,
 
   node_pvalues <- rep(NA_real_, n_nodes)
   valid <- !is.na(observed_tfce)
-  node_pvalues[valid] <- sapply(which(valid), function(n) {
-    (sum(null_max_tfce >= abs(observed_tfce[n])) + 1) / (n_permutations + 1)
-  })
+  if (any(valid)) {
+    node_pvalues[valid] <- vapply(which(valid), function(n) {
+      (sum(null_max_tfce >= abs(observed_tfce[n])) + 1) / (n_permutations + 1)
+    }, FUN.VALUE = numeric(1))
+  }
   sig_nodes <- node_pvalues < alpha
+
+  if (n_na_nodes_observed > 0) {
+    warning(sprintf(
+      "%d of %d nodes failed to fit (NA) for this tract -- results below are based only on the %d nodes that fit. Check n_na_nodes_observed before trusting this tract's results.",
+      n_na_nodes_observed, n_nodes, n_nodes - n_na_nodes_observed
+    ))
+  }
 
   list(
     observed_stat = observed_stat,
