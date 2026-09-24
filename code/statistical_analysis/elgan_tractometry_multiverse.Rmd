@@ -14,28 +14,27 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 ```
 
-## Read data
+## Read data 
 Read harmonized data in AFQ-insight structure (subject-level plus node-level)
-
 
 ```{r}
 # Set home directory
 base_path<-"/Volumes/LaCie/Projects/elgan_dti/data"
 
-# Read harmonized pyAFQ data
+# Read and add to subjects-level data
+## Read harmonized pyAFQ subs data
 subs<-read.csv(file.path(base_path, "harmonized", "afq_prob", "harmonized_subjects.csv"))
 
-nodes<-read.csv(file.path(base_path, "harmonized", "afq_prob", "harmonized_nodes.csv"))
 
-# pull in sublist for ID matching and add to subs
+## pull in sublist for ID matching and add to subs
 sublist<-read.csv(file.path(base_path, "demog_beh", "afq_include.csv")) %>%
   select("subjectID", "sid")
 
 subs<-left_join(subs, sublist, by = "subjectID")
 
-# Read IQ and health data, add to subs
+## Read IQ and health data, add to subs
 demog<-read.csv(file.path(base_path, "demog_beh", "mergedcorrecteddata_cleaned_MP.csv")) %>%
-  select("sid", "ivhx", "plurality", "multip", "dx120_4_asd",	"dx120_5_cp", "epil")
+  select("sid", "ivhx", "plurality", "multip", "dx120_4_asd",	"dx120_5_cp", "epil", "single",	"medu1",	"ins3",	"ins4",	"supp47")
 
 demog2<-read.csv(file.path(base_path, "demog_beh", "elgan_demog_data.csv")) %>%
   select("sid", "develop", "FSIQ2", "srs15")
@@ -44,33 +43,61 @@ tmp<-left_join(demog, demog2, by = "sid")
 
 subs<-left_join(subs, tmp, by="sid")
 
-# Read NTCB factor scores and add to subs
-ntcb<-read.csv(file.path(base_path, "demog_beh", "nih_toolbox_factor_scores.csv"))
+## Read NTCB factor scores and add to subs
+#ntcb<-read.csv(file.path(base_path, "demog_beh", "nih_toolbox_factor_scores.csv"))
 
 
-subs<-left_join(subs, ntcb, by="subjectID")
+#subs<-left_join(subs, ntcb, by="subjectID")
 
-# Read MRI Radiology Reports and add 'abnormal' indicator to subs
+## Read MRI Radiology Reports and add 'abnormal' indicator to subs
 mri<-read.csv(file.path(base_path, "demog_beh", "MRI083126_summaryVar.csv")) %>%
       select("sid", "mri_abnorm_any")
 
 subs<-left_join(subs, mri, by="sid")
 
-# Create family ID variable (famID) as a derivative of subject ID
+## Create family ID variable (famID) as a derivative of subject ID
 subs$famID <- as.factor(substr(as.character(subs$sid), 1, 6))
 
-# write aggregated subject-level data for use in all analyses:
+## write aggregated subject-level data for use in all analyses:
 
 write.csv(subs, file.path(base_path, "demog_beh", "elgan_subject_level_data_for_tractometry.csv"), row.names = FALSE)
 
+# Read harmonized node-level data
+nodesprob<-read.csv(file.path(base_path, "harmonized", "afq_prob", "harmonized_nodes.csv"))
+
+#Merge subject-level data with nodes
+prob<-left_join(nodesprob, subs, by="subjectID")
+
+
+
 ```
 
-## Including Plots
+## Nodewise Regression
+Run nodewise regression controlling for family-wise error with Threshold-Free Cluster Enhancement
+Code developed with Claude Sonnet 5
+Update data, tracts, formula, and var_of_interest before running
+```{r nodewise regression FSIQ}
+source("/Volumes/LaCie/Projects/elgan_dti/code/statistical_analysis/tfce_tractometry.R")
 
-You can also embed plots, for example:
+# Setup run per dataset and variable of interest
+out <- run_tfce_pipeline_multi_tract(
+  data           = prob,   # one row per subject per node per tract
+  tracts         = c("CST_L"),  # any tract names in your tract_col
+  fixed_formula  = "fa ~ FSIQ2 + mri_age + gadays + bw + female",
+  var_of_interest = "FSIQ2",
+  tract_col      = "tractID",       # column name identifying tract per row
+  subject_col    = "subjectID",
+  family_col     = "FamilyID",
+  n_permutations = 1000,            # bump up for the real analysis
+  random_state   = 1,
+  verbose        = FALSE
+)
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+# View summary and plot results per tract
+out$summary              # one row per tract: n_significant_nodes, min_pvalue, n_na_nodes_observed
+out$results[["CST_L"]]   # full node-level detail for one tract
+plot_tfce_result(out$results[["CST_L"]], tract_name = "CST_L")
+
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
