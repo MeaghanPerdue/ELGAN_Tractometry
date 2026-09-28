@@ -252,7 +252,7 @@ permutation_test_tfce <- function(df, fixed_formula, var_of_interest,
                                    node_col = "nodeID",
                                    n_nodes = 100,
                                    n_permutations = 1000,
-                                   E = 0.5, H = 2.0, tfce_n_steps = 100,
+                                   E = 0.5, H = 2.0, tfce_n_steps = 500,
                                    two_sided = TRUE, alpha = 0.05,
                                    random_state = NULL,
                                    verbose = TRUE) {
