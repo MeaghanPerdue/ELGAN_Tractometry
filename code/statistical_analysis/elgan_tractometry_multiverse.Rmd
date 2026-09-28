@@ -5,7 +5,7 @@ date: "9/21/2026"
 output: html_document
 ---
 # Tractometry multiverse analysis ELGAN3
-This code performs tractmetry analysis on harmonized ELGAN3 pyAFQ data. Picks up following harmonization of ELGAN tractometry data across sites and calculation of PCA factor scores for NIH Toolbox Cognition Battery
+This code performs tractometry analysis on harmonized ELGAN3 pyAFQ data. Picks up following harmonization of ELGAN tractometry data across sites and calculation of PCA factor scores for NIH Toolbox Cognition Battery
 
 ## Setup
 ```{r setup, include=FALSE}
@@ -56,7 +56,7 @@ mri<-read.csv(file.path(base_path, "demog_beh", "MRI083126_summaryVar.csv")) %>%
 subs<-left_join(subs, mri, by="sid")
 
 ## Create family ID variable (famID) as a derivative of subject ID
-subs$famID <- as.factor(substr(as.character(subs$sid), 1, 6))
+subs$familyID <- as.factor(substr(as.character(subs$sid), 1, 6))
 
 ## write aggregated subject-level data for use in all analyses:
 
@@ -68,6 +68,30 @@ nodesprob<-read.csv(file.path(base_path, "harmonized", "afq_prob", "harmonized_n
 #Merge subject-level data with nodes
 prob<-left_join(nodesprob, subs, by="subjectID")
 
+# Filter data to complete cases
+model_vars <- c("FSIQ2", "mri_age", "gadays", "bw", "female", "subjectID", "familyID")
+
+prob_complete <- prob %>%
+  filter(complete.cases(select(., all_of(model_vars))))
+
+```
+
+## Check correlations among covariates before running tractometry
+```{r}
+library(psych)
+# filter sub-level data to those with FSIQ (n=170)
+subs_fsiq<- subs %>%
+              filter(complete.cases(select(., all_of(model_vars))))
+
+# summarize data
+describe(subs_fsiq)
+
+# select variables for correlation check
+subs_fsiq_corr<-subs_fsiq %>%
+                    select("FSIQ2", "mri_age", "gadays", "bw")
+
+cor(subs_fsiq_corr)
+cor.test(subs_fsiq_corr$gadays, subs_fsiq_corr$bw)
 
 
 ```
@@ -79,25 +103,70 @@ Update data, tracts, formula, and var_of_interest before running
 ```{r nodewise regression FSIQ}
 source("/Volumes/LaCie/Projects/elgan_dti/code/statistical_analysis/tfce_tractometry.R")
 
+tracts<- c("Callosum Anterior Frontal",
+           "Callosum Motor",
+           "Callosum Occipital", 
+           "Callosum Orbital",
+           "Callosum Posterior Parietal",
+           "Callosum Superior Frontal",      
+           "Callosum Superior Parietal", 
+           "Callosum Temporal",
+           "Left Anterior Thalamic", 
+           "Left Arcuate",
+           "Left Cingulum Cingulate",
+           "Left Corticospinal",
+           "Left Inferior Fronto-occipital",  
+           "Left Inferior Longitudinal",
+           "Left Superior Longitudinal",     
+           "Right Anterior Thalamic", 
+           "Right Arcuate",      
+           "Right Cingulum Cingulate",
+           "Right Corticospinal",             
+           "Right Inferior Fronto-occipital",
+           "Right Inferior Longitudinal",     
+           "Right Superior Longitudinal"
+           )
+
 # Setup run per dataset and variable of interest
 out <- run_tfce_pipeline_multi_tract(
-  data           = prob,   # one row per subject per node per tract
-  tracts         = c("CST_L"),  # any tract names in your tract_col
-  fixed_formula  = "fa ~ FSIQ2 + mri_age + gadays + bw + female",
+  data           = prob_complete,   # one row per subject per node per tract
+  tracts         = c("Right Inferior Longitudinal"),  # any tract names in your tract_col
+  fixed_formula  = "dti_fa ~ FSIQ2 + mri_age + gadays + bw + mean_fd + female",
   var_of_interest = "FSIQ2",
   tract_col      = "tractID",       # column name identifying tract per row
   subject_col    = "subjectID",
-  family_col     = "FamilyID",
-  n_permutations = 1000,            # bump up for the real analysis
+  family_col     = "familyID",
+  n_permutations = 5000,            # bump up for the real analysis
   random_state   = 1,
   verbose        = FALSE
 )
 
 # View summary and plot results per tract
 out$summary              # one row per tract: n_significant_nodes, min_pvalue, n_na_nodes_observed
-out$results[["CST_L"]]   # full node-level detail for one tract
-plot_tfce_result(out$results[["CST_L"]], tract_name = "CST_L")
+out$results[["Right Inferior Longitudinal"]]   # full node-level detail for one tract
+plot_tfce_result(out$results[["Right Inferior Longitudinal"]], tract_name = "Callosum Anterior Frontal")
 
 ```
 
+## GAMMs
+Run GAMMs with continuous variable of interest
+```{r GAMMs}
+library(mgcv)
 
+# Filter database by tract
+prob_complete_RILF<-prob_complete %>%
+                      filter(tractID=="Right Inferior Longitudinal")
+
+
+model <- gam(
+  fa ~ s(nodeID, by = FSIQ2) +
+       s(nodeID) +
+       mri_age + gadays + bw + mean_fd + female + 
+       s(subjectID, bs = "re") +
+       s(FamilyID, bs = "re"),  
+  data = prob_complete_RILF,
+  method = "REML"
+)
+
+summary(model)
+```
