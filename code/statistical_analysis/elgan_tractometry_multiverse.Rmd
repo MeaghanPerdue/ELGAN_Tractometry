@@ -60,7 +60,10 @@ subs$familyID <- as.factor(substr(as.character(subs$sid), 1, 6))
 
 ## write aggregated subject-level data for use in all analyses:
 
-write.csv(subs, file.path(base_path, "demog_beh", "elgan_subject_level_data_for_tractometry.csv"), row.names = FALSE)
+#write.csv(subs, file.path(base_path, "demog_beh", "elgan_subject_level_data_for_tractometry.csv"), row.names = FALSE)
+
+subs<-read.csv(file.path(base_path, "demog_beh", "elgan_subject_level_data_for_tractometry.csv"))
+
 
 # Read harmonized node-level data
 nodesprob<-read.csv(file.path(base_path, "harmonized", "afq_prob", "harmonized_nodes.csv"))
@@ -136,7 +139,7 @@ out <- run_tfce_pipeline_multi_tract(
   tract_col      = "tractID",       # column name identifying tract per row
   subject_col    = "subjectID",
   family_col     = "familyID",
-  n_permutations = 5000,            # bump up for the real analysis
+  n_permutations = 1000,            # bump up for the real analysis
   random_state   = 1,
   verbose        = FALSE
 )
@@ -152,21 +155,109 @@ plot_tfce_result(out$results[["Right Inferior Longitudinal"]], tract_name = "Cal
 Run GAMMs with continuous variable of interest
 ```{r GAMMs}
 library(mgcv)
-
+library(gratia)
 # Filter database by tract
 prob_complete_RILF<-prob_complete %>%
-                      filter(tractID=="Right Inferior Longitudinal")
+                      filter(tractID=="Right Inferior Longitudinal") %>%
+                      mutate(across(c(subjectID, familyID, female), as.factor))
 
 
 model <- gam(
-  fa ~ s(nodeID, by = FSIQ2) +
+  dti_fa ~ s(nodeID, by = FSIQ2) +
        s(nodeID) +
        mri_age + gadays + bw + mean_fd + female + 
        s(subjectID, bs = "re") +
-       s(FamilyID, bs = "re"),  
+       s(familyID, bs = "re"),  
   data = prob_complete_RILF,
+  autocor = TRUE,
   method = "REML"
 )
 
+# Check results
 summary(model)
+
+# Plot with simultaneous CIs to determine where along tract effect is significant
+plot_by_smooth_ci <- function(model, select, data, n_draws = 1000, seed = NULL, level = 0.95) {
+  sm <- smooth_estimates(model, select = select, data = data) %>% arrange(nodeID)
+  draws <- smooth_samples(model, select = select, n = n_draws, data = data, seed = seed)
+
+  draws_wide <- draws %>%
+    select(nodeID, .draw, .value) %>%
+    pivot_wider(names_from = .draw, values_from = .value) %>%
+    arrange(nodeID)
+  stopifnot(all(draws_wide$nodeID == sm$nodeID))
+
+  draw_mat <- as.matrix(draws_wide[, -1])
+  z_mat <- sweep(draw_mat - sm$.estimate, 1, sm$.se, "/")   # standardize each draw
+  max_abs_z <- apply(z_mat, 2, function(col) max(abs(col))) # max |z| across nodes, per draw
+  crit_simultaneous <- quantile(max_abs_z, level)
+  z_pointwise <- qnorm(1 - (1 - level) / 2)
+
+  sm$lower_simultaneous <- sm$.estimate - crit_simultaneous * sm$.se
+  sm$upper_simultaneous <- sm$.estimate + crit_simultaneous * sm$.se
+  sm$lower_pointwise    <- sm$.estimate - z_pointwise * sm$.se
+  sm$upper_pointwise    <- sm$.estimate + z_pointwise * sm$.se
+  sm
+}
+
+# evaluation grid: nodeID sweep, FSIQ2 fixed at 1 (this is gratia's own convention
+# for continuous by-smooths -- the smooth represents the per-unit-FSIQ2 effect),
+# every other model variable fixed at a reference value since gam()'s model.frame
+# needs them present even though they don't affect this particular smooth
+n_nodes <- 100  # your actual node count
+eval_grid <- data.frame(
+  nodeID = 0:(n_nodes - 1), FSIQ2 = 1,
+  mri_age = mean(prob_complete_RILF$mri_age),
+  gadays  = mean(prob_complete_RILF$gadays),
+  bw      = mean(prob_complete_RILF$bw),
+  mean_fd = mean(prob_complete_RILF$mean_fd),
+  female  = 0,
+  subjectID = factor(prob_complete_RILF$subjectID[1], levels = levels(prob_complete_RILF$subjectID)),
+  familyID  = factor(prob_complete_RILF$familyID[1],  levels = levels(prob_complete_RILF$familyID))
+)
+
+sm <- plot_by_smooth_ci(model, "s(nodeID):FSIQ2", eval_grid, n_draws = 1000, seed = 1)
+
+ggplot(sm, aes(x = nodeID, y = .estimate)) +
+  geom_ribbon(aes(ymin = lower_simultaneous, ymax = upper_simultaneous), fill = "steelblue", alpha = 0.2) +
+  geom_ribbon(aes(ymin = lower_pointwise, ymax = upper_pointwise), fill = "steelblue", alpha = 0.35) +
+  geom_line(color = "steelblue4", linewidth = 1) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray40") +
+  labs(x = "Node position", y = "Effect of FSIQ2 on dti_fa",
+       title = "dti_fa ~ FSIQ2 varying-coefficient smooth along tract",
+       subtitle = "Dark band = pointwise 95% CI; light band = simultaneous 95% CI") +
+  theme_minimal()
+
+## Identify boundaries of significant clusters:
+find_significant_clusters <- function(sm, lower_col = "lower_simultaneous",
+                                       upper_col = "upper_simultaneous",
+                                       node_col = "nodeID") {
+  sm <- sm[order(sm[[node_col]]), ]
+  sig <- (sm[[lower_col]] > 0) | (sm[[upper_col]] < 0)  # CI excludes zero
+
+  rl <- rle(sig)
+  ends   <- cumsum(rl$lengths)
+  starts <- ends - rl$lengths + 1
+  sig_runs <- which(rl$values)
+
+  if (length(sig_runs) == 0) {
+    message("No nodes where the simultaneous CI excludes zero.")
+    return(data.frame(start_node = numeric(0), end_node = numeric(0),
+                       n_nodes = integer(0), direction = character(0)))
+  }
+
+  do.call(rbind, lapply(sig_runs, function(i) {
+    idx <- starts[i]:ends[i]
+    data.frame(
+      start_node = sm[[node_col]][starts[i]],
+      end_node   = sm[[node_col]][ends[i]],
+      n_nodes    = length(idx),
+      direction  = ifelse(mean(sm$.estimate[idx]) > 0, "positive", "negative")
+    )
+  }))
+}
+
+clusters <- find_significant_clusters(sm)
+clusters
+
 ```
