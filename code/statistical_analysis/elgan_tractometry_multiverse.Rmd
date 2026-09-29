@@ -114,7 +114,6 @@ tracts<- c("Callosum Anterior Frontal",
            "Callosum Posterior Parietal",
            "Callosum Superior Frontal",      
            "Callosum Superior Parietal", 
-           "Callosum Temporal",
            "Left Anterior Thalamic", 
            "Left Arcuate",
            "Left Cingulum Cingulate",
@@ -145,8 +144,13 @@ out <- run_tfce_pipeline_multi_tract(
   verbose        = FALSE
 )
 
+# Save output for future examination
+save(out, file="/Volumes/LaCie/Projects/elgan_dti/results/FSIQ_GAMMs_AFQprob/FSIQ_GAMMs_AFQ_prob_output.RData")
+
 # View summary and plot results per tract
 out$summary              # one row per tract: n_significant_nodes, min_pvalue, n_na_nodes_observed
+write.csv(out$summary, file="/Volumes/LaCie/Projects/elgan_dti/results/FSIQ_GAMMs_AFQprob/FSIQ_GAMMs_AFQ_prob_tract_summary.csv", row.names=FALSE)
+
 out$results[["Right Inferior Longitudinal"]]   # full node-level detail for one tract
 plot_tfce_result(out$results[["Right Inferior Longitudinal"]], tract_name = "Callosum Anterior Frontal")
 
@@ -157,9 +161,33 @@ Run GAMMs with continuous variable of interest
 ```{r GAMMs}
 source("gamm_tractometry.R")
 
+# full tract list
+tracts<- c("Callosum Anterior Frontal",
+           "Callosum Motor",
+           "Callosum Occipital", 
+           "Callosum Orbital",
+           "Callosum Posterior Parietal",
+           "Callosum Superior Frontal",      
+           "Callosum Superior Parietal", 
+           "Left Anterior Thalamic", 
+           "Left Arcuate",
+           "Left Cingulum Cingulate",
+           "Left Corticospinal",
+           "Left Inferior Fronto-occipital",  
+           "Left Inferior Longitudinal",
+           "Left Superior Longitudinal",     
+           "Right Anterior Thalamic", 
+           "Right Arcuate",      
+           "Right Cingulum Cingulate",
+           "Right Corticospinal",             
+           "Right Inferior Fronto-occipital",
+           "Right Inferior Longitudinal",     
+           "Right Superior Longitudinal"
+           )
+
 out <- run_gamm_pipeline_multi_tract(
   data            = prob_complete,   # all tracts, unfiltered
-  tracts          = c("Right Inferior Longitudinal", "Left Arcuate", ...),
+  tracts          = tracts,
   outcome         = "dti_fa",
   var_of_interest = "FSIQ2",
   covariates      = c("mri_age", "gadays", "bw", "mean_fd", "female"),
@@ -172,8 +200,8 @@ out <- run_gamm_pipeline_multi_tract(
 )
 
 out$summary                                            # one row per tract: cluster counts/extents
-out$results[["Right Inferior Longitudinal"]]$clusters   # node ranges for that tract
-plot_gamm_result(out$results[["Right Inferior Longitudinal"]],
-                  "Right Inferior Longitudinal", "FSIQ2")
+#out$results[["Callosum Posterior Parietal"]]$clusters   # node ranges for that tract
+plot_gamm_result(out$results[["Callosum Superior Parietal"]],
+                  "Callosum Superior Parietal", "FSIQ2")
 
 ```
