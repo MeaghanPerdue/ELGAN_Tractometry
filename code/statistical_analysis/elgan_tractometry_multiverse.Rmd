@@ -161,6 +161,43 @@ write.csv(regout$summary, file="/Volumes/LaCie/Projects/elgan_dti/results/FSIQ_A
 regout$results[["Callosum Occipital"]]   # full node-level detail for one tract
 plot_tfce_result(regout$results[["Callosum Occipital"]], tract_name = "Callosum Occipital")
 
+
+# Plot all tracts combined, nodewise t-statistic only
+## plotting function for just one panel using ggplot
+plot_tfce_stat_only <- function(result, tract_name = "") {
+  n_nodes <- length(result$observed_stat)
+  df <- data.frame(
+    node = 0:(n_nodes - 1),
+    stat = result$observed_stat
+  )
+
+  ggplot(df, aes(x = node, y = stat)) +
+    geom_line() +
+    geom_hline(yintercept = 0, color = "gray") +
+    coord_cartesian(ylim = c(-3.5, 3.5)) +
+    labs(
+      title = tract_name,
+      x = "node index (0 = tract start)",
+      y = "node t-statistic"
+    ) +
+    theme_classic()
+}
+
+## wrap over multiple tracts
+library(purrr)
+library(patchwork)
+
+plots <- map(tracts, function(tr) {
+  plot_tfce_stat_only(regout$results[[tr]], tract_name = tr)
+})
+
+wrap_plots(plots)
+
+
+
+
+
+
 ```
 
 ## GAMMs
@@ -243,6 +280,7 @@ plot_one_tract <- function(tract_name, gammout, covariate = "FSIQ2") {
 plots <- map(tracts, function(tr) {
   plot_gamm_result(gammout$results[[tr]], tr, "FSIQ2") +
     ggtitle(tr) +
+    coord_cartesian(ylim = c(-.001, .001)) +
     theme(plot.subtitle = element_blank())
 })
 
