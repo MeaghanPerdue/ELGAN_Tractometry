@@ -102,10 +102,15 @@ cor.test(subs_fsiq_corr$gadays, subs_fsiq_corr$bw)
 
 ## Nodewise Regression
 Run nodewise regression controlling for family-wise error with Threshold-Free Cluster Enhancement
+Runs multiple tracts in parallel
 Code developed with Claude Sonnet 5
 Update data, tracts, formula, and var_of_interest before running
 ```{r nodewise regression FSIQ}
 source("/Volumes/LaCie/Projects/elgan_dti/code/statistical_analysis/tfce_tractometry.R")
+
+# filter dataframe first
+prob_complete_reduced<-prob_complete %>%
+            select("subjectID", "tractID","nodeID", "dti_fa", "female", "mri_age", "gadays", "bw", "mean_fd", "FSIQ2", "familyID")
 
 tracts<- c("Callosum Anterior Frontal",
            "Callosum Motor",
@@ -132,7 +137,7 @@ tracts<- c("Callosum Anterior Frontal",
 
 # Setup run per dataset and variable of interest
 regout <- run_tfce_pipeline_multi_tract_parallel(
-  data            = prob_complete,
+  data            = prob_complete_reduced,
   tracts          = tracts,
   fixed_formula   = "dti_fa ~ FSIQ2 + mri_age + gadays + bw + female",
   var_of_interest = "FSIQ2",
@@ -145,12 +150,16 @@ regout <- run_tfce_pipeline_multi_tract_parallel(
   checkpoint_dir  = "/Volumes/LaCie/Projects/elgan_dti/results/tfce_checkpoints"   # one .rds file per tract, saved as each finishes
 )
 
+save(regout, file="/Volumes/LaCie/Projects/elgan_dti/results/FSIQ_AFQprob/FSIQ_REG_AFQ_prob_output.RData")
+
+
 # View summary and plot results per tract
 regout$summary              # one row per tract: n_significant_nodes, min_pvalue, n_na_nodes_observed
+write.csv(regout$summary, file="/Volumes/LaCie/Projects/elgan_dti/results/FSIQ_AFQprob/FSIQ_REG_AFQ_prob_tract_summary.csv", row.names=FALSE)
 
 
-regout$results[["Right Inferior Longitudinal"]]   # full node-level detail for one tract
-plot_tfce_result(regout$results[["Right Inferior Longitudinal"]], tract_name = "Callosum Anterior Frontal")
+regout$results[["Callosum Occipital"]]   # full node-level detail for one tract
+plot_tfce_result(regout$results[["Callosum Occipital"]], tract_name = "Callosum Occipital")
 
 ```
 
@@ -198,13 +207,49 @@ gammout <- run_gamm_pipeline_multi_tract(
 )
 
 # Save output for future examination
-save(gammout, file="/Volumes/LaCie/Projects/elgan_dti/results/FSIQ_GAMMs_AFQprob/FSIQ_GAMMs_AFQ_prob_output.RData")
+save(gammout, file="/Volumes/LaCie/Projects/elgan_dti/results/FSIQ_AFQprob/FSIQ_GAMMs_AFQ_prob_output.RData")
+load(file="/Volumes/LaCie/Projects/elgan_dti/results/FSIQ_AFQprob/FSIQ_GAMMs_AFQ_prob_output.RData")
 
 gammout$summary                                            # one row per tract: cluster counts/extents
-write.csv(out$summary, file="/Volumes/LaCie/Projects/elgan_dti/results/FSIQ_GAMMs_AFQprob/FSIQ_GAMMs_AFQ_prob_tract_summary.csv", row.names=FALSE)
+write.csv(gammout$summary, file="/Volumes/LaCie/Projects/elgan_dti/results/FSIQ_AFQprob/FSIQ_GAMMs_AFQ_prob_tract_summary.csv", row.names=FALSE)
 
-#gammout$results[["Callosum Posterior Parietal"]]$clusters   # node ranges for that tract
-plot_gamm_result(gammout$results[["Callosum Superior Parietal"]],
-                  "Callosum Superior Parietal", "FSIQ2")
+#gammout$results[["Callosum Occipital"]]$clusters   # node ranges for that tract
+plot_gamm_result(gammout$results[["Callosum Occipital"]],
+                  "Callosum Occipital", "FSIQ2")
+
+# Output plots all tracts
+library(purrr)
+library(patchwork)
+
+cc<-c("Callosum Anterior Frontal",
+           "Callosum Motor",
+           "Callosum Occipital", 
+           "Callosum Orbital",
+           "Callosum Posterior Parietal",
+           "Callosum Superior Frontal",      
+           "Callosum Superior Parietal"
+)
+
+## Create plotting function
+plot_one_tract <- function(tract_name, gammout, covariate = "FSIQ2") {
+  plot_gamm_result(
+    gammout$results[[tract_name]],
+    tract_name,
+    covariate
+  )
+}
+
+## plot each tract (replaces title and removes subtitle from the original plots)
+plots <- map(tracts, function(tr) {
+  plot_gamm_result(gammout$results[[tr]], tr, "FSIQ2") +
+    ggtitle(tr) +
+    theme(plot.subtitle = element_blank())
+})
+
+## combine plots
+combined_plot <- wrap_plots(plots)
+
+combined_plot
+
 
 ```
