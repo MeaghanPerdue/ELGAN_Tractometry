@@ -252,7 +252,7 @@ permutation_test_tfce <- function(df, fixed_formula, var_of_interest,
                                    node_col = "nodeID",
                                    n_nodes = 100,
                                    n_permutations = 1000,
-                                   E = 0.5, H = 2.0, tfce_n_steps = 500,
+                                   E = 0.5, H = 2.0, tfce_n_steps = 100,
                                    two_sided = TRUE, alpha = 0.05,
                                    random_state = NULL,
                                    verbose = TRUE) {
@@ -333,6 +333,159 @@ permutation_test_tfce <- function(df, fixed_formula, var_of_interest,
     node_pvalues = node_pvalues,
     sig_nodes = sig_nodes,
     alpha = alpha,
+    n_na_nodes_observed = n_na_nodes_observed
+  )
+}
+
+
+# ---------------------------------------------------------------------------
+# 4b. Parallelized permutation test (future.apply), with chunked checkpointing
+# ---------------------------------------------------------------------------
+
+#' Same as `permutation_test_tfce()`, but runs the permutation loop in
+#' parallel across `n_workers` local R processes via future.apply, and saves
+#' intermediate progress to disk in chunks so a crash/interruption during a
+#' long run (e.g., 5000 permutations) doesn't lose completed work.
+#'
+#' Reproducibility note: parallel results will NOT numerically match a serial
+#' `permutation_test_tfce()` run with the same `random_state` -- future.seed's
+#' independent-stream RNG (L'Ecuyer-CMRG) differs from base R's serial
+#' stream. They WILL be reproducible across reruns of this parallel function
+#' with the same `random_state`, `n_permutations`, and `n_workers`.
+#'
+#' @param n_workers Number of parallel worker processes. Leave some headroom
+#'   below your machine's full core count (e.g. 8 on a 10-12 core M2 Pro) so
+#'   the machine stays responsive.
+#' @param chunk_size Permutations per checkpoint. Progress is saved to
+#'   `checkpoint_path` after every chunk.
+#' @param checkpoint_path Optional .rds file path. If it already exists and
+#'   contains a partial run matching this call's settings, resumes from
+#'   there instead of starting over -- useful after an interrupted run.
+#' @return Same structure as `permutation_test_tfce()`.
+permutation_test_tfce_parallel <- function(df, fixed_formula, var_of_interest,
+                                            subject_col = "subjectID",
+                                            family_col = "FamilyID",
+                                            node_col = "nodeID",
+                                            n_nodes = 100,
+                                            n_permutations = 5000,
+                                            E = 0.5, H = 2.0, tfce_n_steps = 100,
+                                            two_sided = TRUE, alpha = 0.05,
+                                            random_state = NULL,
+                                            n_workers = 8,
+                                            chunk_size = 500,
+                                            checkpoint_path = NULL) {
+  library(future)
+  library(future.apply)
+
+  # keep BLAS from oversubscribing underneath worker-level parallelism --
+  # each lmer() fit is tiny, so multithreaded linear algebra buys nothing
+  # here and just fights with the worker processes for cores
+  old_omp <- Sys.getenv("OMP_NUM_THREADS", unset = NA)
+  old_veclib <- Sys.getenv("VECLIB_MAXIMUM_THREADS", unset = NA)
+  Sys.setenv(OMP_NUM_THREADS = "1", VECLIB_MAXIMUM_THREADS = "1")
+
+  old_plan <- plan()
+  plan(multisession, workers = n_workers)
+  on.exit({
+    plan(old_plan)
+    if (!is.na(old_omp)) Sys.setenv(OMP_NUM_THREADS = old_omp)
+    if (!is.na(old_veclib)) Sys.setenv(VECLIB_MAXIMUM_THREADS = old_veclib)
+  }, add = TRUE)
+
+  observed_stat <- nodewise_lmer(df, fixed_formula, var_of_interest,
+                                  group_col = family_col, node_col = node_col,
+                                  n_nodes = n_nodes)
+  n_na_nodes_observed <- sum(is.na(observed_stat))
+
+  if (n_na_nodes_observed == n_nodes) {
+    stop("nodewise_lmer() failed to fit a model at EVERY node -- see permutation_test_tfce()'s ",
+         "error message for troubleshooting steps (run the serial version first to see it in full).")
+  }
+
+  observed_tfce <- tfce_1d(observed_stat, E = E, H = H, n_steps = tfce_n_steps,
+                            two_sided = two_sided)
+
+  # resume from checkpoint if one exists and matches this call's settings
+  null_max_tfce <- numeric(0)
+  start_perm <- 1
+  if (!is.null(checkpoint_path) && file.exists(checkpoint_path)) {
+    ckpt <- readRDS(checkpoint_path)
+    # resume whenever the settings that determine the null distribution's
+    # meaning match (seed, formula, variable of interest) -- n_permutations
+    # is deliberately NOT part of this check, since asking for MORE total
+    # permutations than a checkpoint currently has is exactly the normal
+    # resume use case (e.g., extending a 1000-permutation checkpoint to
+    # 5000) and should not be treated as a settings mismatch
+    settings_match <- identical(ckpt$settings$random_state, random_state) &&
+      identical(ckpt$settings$fixed_formula, fixed_formula) &&
+      identical(ckpt$settings$var_of_interest, var_of_interest)
+
+    if (settings_match && length(ckpt$null_max_tfce) < n_permutations) {
+      null_max_tfce <- ckpt$null_max_tfce
+      start_perm <- length(null_max_tfce) + 1
+      cat(sprintf("Resuming from checkpoint: %d/%d permutations already done.\n",
+                  length(null_max_tfce), n_permutations))
+    } else if (settings_match && length(ckpt$null_max_tfce) >= n_permutations) {
+      # checkpoint already covers (or exceeds) the requested count
+      null_max_tfce <- ckpt$null_max_tfce[seq_len(n_permutations)]
+      start_perm <- n_permutations + 1
+      cat(sprintf("Checkpoint already has %d permutations (>= the %d requested) -- using it as-is.\n",
+                  length(ckpt$null_max_tfce), n_permutations))
+    } else {
+      cat("Checkpoint found but random_state/formula/var_of_interest don't match this call -- starting fresh.\n")
+    }
+  }
+
+  if (start_perm <= n_permutations) {
+    chunk_starts <- seq(start_perm, n_permutations, by = chunk_size)
+
+    for (chunk_start in chunk_starts) {
+      chunk_end <- min(chunk_start + chunk_size - 1, n_permutations)
+      chunk_ids <- chunk_start:chunk_end
+
+      if (!is.null(random_state)) set.seed(random_state)
+
+      chunk_results <- future_sapply(chunk_ids, function(i) {
+        shuffled_map <- family_block_permutation(df, subject_col, family_col, var_of_interest)
+        perm_df <- df
+        perm_df[[var_of_interest]] <- shuffled_map[as.character(df[[subject_col]])]
+
+        perm_stat <- nodewise_lmer(perm_df, fixed_formula, var_of_interest,
+                                    group_col = family_col, node_col = node_col,
+                                    n_nodes = n_nodes)
+        perm_tfce <- tfce_1d(perm_stat, E = E, H = H, n_steps = tfce_n_steps,
+                              two_sided = two_sided)
+        finite_tfce <- perm_tfce[!is.na(perm_tfce)]
+        if (length(finite_tfce) > 0) max(abs(finite_tfce)) else 0
+      }, future.seed = TRUE, future.packages = c("lme4", "dplyr"))
+
+      null_max_tfce <- c(null_max_tfce, chunk_results)
+
+      cat(sprintf("  completed permutations %d-%d of %d\n", chunk_start, chunk_end, n_permutations))
+
+      if (!is.null(checkpoint_path)) {
+        saveRDS(list(
+          null_max_tfce = null_max_tfce,
+          settings = list(n_permutations = n_permutations, random_state = random_state,
+                           fixed_formula = fixed_formula, var_of_interest = var_of_interest)
+        ), checkpoint_path)
+      }
+    }
+  }
+
+  node_pvalues <- rep(NA_real_, n_nodes)
+  valid <- !is.na(observed_tfce)
+  if (any(valid)) {
+    node_pvalues[valid] <- vapply(which(valid), function(n) {
+      (sum(null_max_tfce >= abs(observed_tfce[n])) + 1) / (n_permutations + 1)
+    }, FUN.VALUE = numeric(1))
+  }
+  sig_nodes <- node_pvalues < alpha
+
+  list(
+    observed_stat = observed_stat, observed_tfce = observed_tfce,
+    null_max_tfce = null_max_tfce, node_pvalues = node_pvalues,
+    sig_nodes = sig_nodes, alpha = alpha,
     n_na_nodes_observed = n_na_nodes_observed
   )
 }
@@ -467,6 +620,147 @@ run_tfce_pipeline_multi_tract <- function(data, tracts, fixed_formula,
 }
 
 
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# 6b. Multi-tract wrapper, parallelized ACROSS TRACTS (not across permutations)
+# ---------------------------------------------------------------------------
+
+#' Same job as `run_tfce_pipeline_multi_tract()`, but runs each tract's full
+#' permutation_test_tfce() (serial internally) in its own parallel worker, so
+#' several tracts run at once. Use this INSTEAD OF `permutation_test_tfce_parallel()`
+#' when you have many tracts and want to parallelize across them rather than
+#' within one tract's permutation loop -- combining both levels of
+#' parallelism at once causes worker oversubscription and is not supported
+#' here on purpose.
+#'
+#' @param n_workers Number of tracts to run simultaneously. With more tracts
+#'   than workers, `future` queues the rest automatically as workers free up
+#'   -- you don't need n_workers >= length(tracts).
+#' @param checkpoint_dir Optional directory. If set, each tract's result is
+#'   saved to its own .rds file there as soon as that tract's worker
+#'   finishes (this is the earliest point saving is actually possible --
+#'   `future_lapply()` itself only returns once every tract is done, so
+#'   per-tract saving has to happen inside the worker, not after the call
+#'   returns). On a rerun with the same `checkpoint_dir`, any tract whose
+#'   file already exists is loaded from disk and skipped entirely rather
+#'   than recomputed -- so an interrupted batch resumes with only the
+#'   unfinished tracts actually rerun. Tract names are sanitized into safe
+#'   filenames (non-alphanumeric characters replaced with "_").
+#' @param force_rerun If TRUE, ignores existing checkpoint files and reruns
+#'   every tract (overwriting their checkpoints). Default FALSE.
+#' @param ... Forwarded to `permutation_test_tfce()` for every tract
+#'   (n_permutations, subject_col, family_col, E, H, alpha, random_state, etc).
+#'   `verbose` is forced to FALSE internally since per-permutation progress
+#'   messages from several simultaneous workers interleave unreadably --
+#'   use `progress_updates = TRUE` (below) for cross-tract progress instead.
+#' @param progress_updates If TRUE (default), prints a line as each tract
+#'   finishes, in whatever order they complete (not necessarily the order
+#'   given in `tracts`).
+#' @return Same structure as `run_tfce_pipeline_multi_tract()`: list(results, summary).
+run_tfce_pipeline_multi_tract_parallel <- function(data, tracts, fixed_formula,
+                                                    var_of_interest,
+                                                    tract_col = "tractID",
+                                                    n_workers = 8,
+                                                    checkpoint_dir = NULL,
+                                                    force_rerun = FALSE,
+                                                    progress_updates = TRUE,
+                                                    ...) {
+  library(future)
+  library(future.apply)
+
+  old_omp <- Sys.getenv("OMP_NUM_THREADS", unset = NA)
+  old_veclib <- Sys.getenv("VECLIB_MAXIMUM_THREADS", unset = NA)
+  Sys.setenv(OMP_NUM_THREADS = "1", VECLIB_MAXIMUM_THREADS = "1")
+
+  old_plan <- plan()
+  plan(multisession, workers = n_workers)
+  on.exit({
+    plan(old_plan)
+    if (!is.na(old_omp)) Sys.setenv(OMP_NUM_THREADS = old_omp)
+    if (!is.na(old_veclib)) Sys.setenv(VECLIB_MAXIMUM_THREADS = old_veclib)
+  }, add = TRUE)
+
+  if (!is.null(checkpoint_dir) && !dir.exists(checkpoint_dir)) {
+    dir.create(checkpoint_dir, recursive = TRUE)
+  }
+  safe_name <- function(tr) gsub("[^A-Za-z0-9_-]", "_", tr)
+  checkpoint_file_for <- function(tr) file.path(checkpoint_dir, paste0(safe_name(tr), ".rds"))
+
+  dots <- list(...)
+  dots$verbose <- FALSE  # force off -- see docstring
+
+  tract_dfs <- lapply(tracts, function(tr) data[data[[tract_col]] == tr, ])
+  names(tract_dfs) <- tracts
+
+  valid_tracts <- tracts[vapply(tract_dfs, nrow, integer(1)) > 0]
+  skipped <- setdiff(tracts, valid_tracts)
+  if (length(skipped) > 0) {
+    warning(sprintf("Tract(s) with no rows in `data`, skipped: %s", paste(skipped, collapse = ", ")))
+  }
+
+  # split into tracts already checkpointed (load, don't recompute) vs. tracts
+  # that still need to run
+  results_list <- setNames(vector("list", length(valid_tracts)), valid_tracts)
+  to_run <- valid_tracts
+
+  if (!is.null(checkpoint_dir) && !force_rerun) {
+    already_done <- valid_tracts[file.exists(vapply(valid_tracts, checkpoint_file_for, character(1)))]
+    for (tr in already_done) {
+      results_list[[tr]] <- readRDS(checkpoint_file_for(tr))
+      if (progress_updates) cat(sprintf("  [from checkpoint] %s\n", tr))
+    }
+    to_run <- setdiff(valid_tracts, already_done)
+  }
+
+  if (progress_updates && length(to_run) > 0) {
+    cat(sprintf("Running %d tract(s) across up to %d parallel workers (%d loaded from checkpoint)...\n",
+                length(to_run), n_workers, length(valid_tracts) - length(to_run)))
+  }
+
+  if (length(to_run) > 0) {
+    new_results <- future_lapply(to_run, function(tr) {
+      res <- tryCatch(
+        do.call(permutation_test_tfce, c(
+          list(df = tract_dfs[[tr]], fixed_formula = fixed_formula,
+               var_of_interest = var_of_interest),
+          dots
+        )),
+        error = function(e) list(.error = conditionMessage(e))
+      )
+      # save as soon as THIS worker's tract is done -- see docstring for why
+      # this has to happen here rather than after future_lapply() returns
+      if (!is.null(checkpoint_dir) && is.null(res$.error)) {
+        saveRDS(res, checkpoint_file_for(tr))
+      }
+      res
+    }, future.seed = TRUE, future.packages = c("lme4", "dplyr"))
+    names(new_results) <- to_run
+
+    for (tr in to_run) results_list[[tr]] <- new_results[[tr]]
+  }
+
+  results <- vector("list", length(tracts)); names(results) <- tracts
+  summary_rows <- vector("list", length(tracts))
+
+  for (tr in valid_tracts) {
+    res <- results_list[[tr]]
+    if (is.null(res) || !is.null(res$.error)) {
+      warning(sprintf("Tract '%s' failed: %s", tr, if (!is.null(res$.error)) res$.error else "unknown error"))
+      if (progress_updates) cat(sprintf("  [FAILED] %s\n", tr))
+      next
+    }
+    results[[tr]] <- res
+    summary_rows[[tr]] <- data.frame(
+      tract = tr,
+      n_significant_nodes = sum(res$sig_nodes, na.rm = TRUE),
+      min_pvalue = suppressWarnings(min(res$node_pvalues, na.rm = TRUE)),
+      n_na_nodes_observed = res$n_na_nodes_observed
+    )
+    if (progress_updates && tr %in% to_run) cat(sprintf("  [done] %s\n", tr))
+  }
+
+  list(results = results, summary = bind_rows(summary_rows))
+}
 #' Plot the TFCE result for a single tract (3-panel: stat / TFCE / p-value),
 #' as returned by `permutation_test_tfce()` or as one entry of
 #' `run_tfce_pipeline_multi_tract()$results`.
