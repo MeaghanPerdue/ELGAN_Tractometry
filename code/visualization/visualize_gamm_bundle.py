@@ -5,6 +5,9 @@ subject's actual bundle streamlines, following the approach shown in
 pyAFQ's "Visualizing AFQ derivatives" tutorial
 (https://tractometry.org/pyAFQ/tutorials/tutorial_examples/plot_005_viz.html).
 
+Code adapted with Claude Sonnet 5
+30 Sept 2026
+
 Workflow
 --------
 1. In R: save the per-node GAMM result for one tract to a CSV with at
@@ -188,7 +191,7 @@ def build_node_colors(
     vmin = node_values.min() if vmin is None else vmin
     vmax = node_values.max() if vmax is None else vmax
     norm = mcolors.Normalize(vmin=vmin, vmax=vmax)
-    cmap = cm.get_cmap(cmap_name)
+    cmap = matplotlib.pyplot.get_cmap(cmap_name)
     colors = cmap(norm(node_values))[:, :3]
     return colors, norm, cmap
 
@@ -317,15 +320,15 @@ def render_bundle_matplotlib(
 
 if __name__ == "__main__":
     # --- adjust these paths for your data ---
-    CSV_PATH = "RILF_FSIQ2_effect.csv"       # saved from R, see module docstring
-    SUBJECT = "sub-XXXX"
-    SESSION = "ses-YYYY"                      # omit/adjust if your BIDS tree has no session level
-    AFQ_DERIV = f"derivatives/afq/{SUBJECT}/{SESSION}"
+    CSV_PATH = "results/FSIQ_AFQprob/GAMM_nodewise_results/RILF_FSIQ2_effect.csv"       # saved from R, see module docstring
+    SUBJECT = "sub-E1600121J"
+    SESSION = "ses-03"                      # omit/adjust if your BIDS tree has no session level
+    AFQ_DERIV = f"data/site-160/derivatives/afq/{SUBJECT}/{SESSION}/dwi"
     TRK_PATH = (
-        f"{AFQ_DERIV}/clean_bundles/"
-        f"{SUBJECT}_{SESSION}_..._desc-prob-afq-RILF_tractography.trk"
+        f"{AFQ_DERIV}/bundles/"
+        f"{SUBJECT}_{SESSION}_desc-RightInferiorLongitudinal_tractography.trk"
     )  # fill in the exact filename -- check your clean_bundles/ or bundles/ folder
-    REFERENCE_PATH = f"{AFQ_DERIV}/{SUBJECT}_{SESSION}_..._dwi_b0.nii.gz"
+    REFERENCE_PATH = f"{AFQ_DERIV}/{SUBJECT}_{SESSION}_b0ref.nii.gz"
     N_NODES = 100
 
     node_values = load_nodewise_effect(CSV_PATH, n_nodes=N_NODES)
@@ -333,7 +336,7 @@ if __name__ == "__main__":
     node_colors, norm, cmap = build_node_colors(node_values, cmap_name="viridis")
 
     try:
-        render_bundle_fury(streamlines, node_colors, out_path="RILF_FSIQ2_effect_fury.png")
+        render_bundle_fury(streamlines, node_colors, out_path="results/FSIQ_AFQprob/GAMM_bundle_viz/RILF_FSIQ2_effect_fury.png")
     except Exception as e:
         print(f"fury rendering failed ({e}); falling back to matplotlib.")
         render_bundle_matplotlib(
