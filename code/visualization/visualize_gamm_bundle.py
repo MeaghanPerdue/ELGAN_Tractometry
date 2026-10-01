@@ -52,6 +52,7 @@ import pandas as pd
 import nibabel as nib
 from dipy.io.streamline import load_trk
 from dipy.tracking.streamline import set_number_of_points
+from matplotlib import cm
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 
@@ -247,7 +248,7 @@ def render_bundle_fury(
     )
     scene = window.Scene()
     scene.add(line_actor)
-    window.snapshot(scene=scene, fname=out_path, screen_config=[size])
+    window.snapshot(scene=scene, fname=out_path, screen_config=(0, 0, size[0], size[1]))
     print(f"Saved fury rendering to {out_path}")
 
 
