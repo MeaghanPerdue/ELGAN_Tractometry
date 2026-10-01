@@ -206,7 +206,7 @@ def render_bundle_fury(
     node_colors: np.ndarray,
     out_path: str = "bundle_fsiq2_effect.png",
     tube_radius: float = 0.3,
-    size: tuple[int, int] = (1200, 900),
+    size: tuple[int, int] = (800, 600),
 ) -> None:
     """
     Render the bundle colored along its length by `node_colors`, using
