@@ -205,6 +205,15 @@ Run GAMMs with continuous variable of interest
 ```{r GAMMs}
 source("gamm_tractometry.R")
 
+# scale data (z-score) for better visualization
+# filter dataframe to relevant columns first
+prob_complete_scaled <- prob_complete %>%
+  select("subjectID", "tractID", "nodeID", "dti_fa", "female", "mri_age",
+         "gadays", "bw", "mean_fd", "FSIQ2", "familyID") %>%
+  mutate(across(c("dti_fa", "mri_age", "gadays", "bw", "mean_fd", "FSIQ2")))
+
+
+
 # full tract list
 tracts<- c("Callosum Anterior Frontal",
            "Callosum Motor",
@@ -230,7 +239,7 @@ tracts<- c("Callosum Anterior Frontal",
            )
 
 gammout <- run_gamm_pipeline_multi_tract(
-  data            = prob_complete,   # all tracts, unfiltered
+  data            = prob_complete_scaled,   # all tracts, unfiltered
   tracts          = tracts,
   outcome         = "dti_fa",
   var_of_interest = "FSIQ2",
@@ -244,15 +253,19 @@ gammout <- run_gamm_pipeline_multi_tract(
 )
 
 # Save output for future examination
-save(gammout, file="/Volumes/LaCie/Projects/elgan_dti/results/FSIQ_AFQprob/FSIQ_GAMMs_AFQ_prob_output.RData")
-load(file="/Volumes/LaCie/Projects/elgan_dti/results/FSIQ_AFQprob/FSIQ_GAMMs_AFQ_prob_output.RData")
+save(gammout, file="/Volumes/LaCie/Projects/elgan_dti/results/FSIQ_AFQprob/FSIQ_GAMMs_SCALED_AFQ_prob_output.RData")
+load(file="/Volumes/LaCie/Projects/elgan_dti/results/FSIQ_AFQprob/FSIQ_GAMMs_SCALED_AFQ_prob_output.RData")
 
 gammout$summary                                            # one row per tract: cluster counts/extents
-write.csv(gammout$summary, file="/Volumes/LaCie/Projects/elgan_dti/results/FSIQ_AFQprob/FSIQ_GAMMs_AFQ_prob_tract_summary.csv", row.names=FALSE)
+write.csv(gammout$summary, file="/Volumes/LaCie/Projects/elgan_dti/results/FSIQ_AFQprob/FSIQ_GAMMs_SCALED_AFQ_prob_tract_summary.csv", row.names=FALSE)
 
 #gammout$results[["Callosum Occipital"]]$clusters   # node ranges for that tract
 plot_gamm_result(gammout$results[["Callosum Occipital"]],
                   "Callosum Occipital", "FSIQ2")
+
+# Write tract-specific results for visualization - use as input to visuzlize_gamm_bundle.py 
+sm <- gammout$results[["Right Inferior Longitudinal"]]$sm
+write.csv(sm[, c("nodeID", ".estimate")], "/Volumes/LaCie/Projects/elgan_dti/results/FSIQ_AFQprob/GAMM_nodewise_results/RILF_FSIQ2_effect.csv", row.names = FALSE)
 
 # Output plots all tracts
 library(purrr)
@@ -280,7 +293,7 @@ plot_one_tract <- function(tract_name, gammout, covariate = "FSIQ2") {
 plots <- map(tracts, function(tr) {
   plot_gamm_result(gammout$results[[tr]], tr, "FSIQ2") +
     ggtitle(tr) +
-    coord_cartesian(ylim = c(-.001, .001)) +
+    coord_cartesian(ylim = c(-.15, .15)) +
     theme(plot.subtitle = element_blank())
 })
 
