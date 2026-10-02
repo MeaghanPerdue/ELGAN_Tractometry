@@ -5,9 +5,6 @@ subject's actual bundle streamlines, following the approach shown in
 pyAFQ's "Visualizing AFQ derivatives" tutorial
 (https://tractometry.org/pyAFQ/tutorials/tutorial_examples/plot_005_viz.html).
 
-Code adapted with Claude Sonnet 5
-30 Sept 2026
-
 Workflow
 --------
 1. In R: save the per-node GAMM result for one tract to a CSV with at
@@ -21,6 +18,16 @@ Workflow
    file from your BIDS derivatives/afq folder, and it renders the
    bundle's streamlines colored along their length by the node-wise
    FSIQ2 effect.
+
+Orientation note: this script orients every streamline in the bundle to a
+consistent direction (via dipy's `orient_by_streamline()`, against this
+subject's own bundle centroid) before resampling and coloring -- matching
+the real dipy/pyAFQ tract-profile method
+(https://docs.dipy.org/stable/examples_built/streamline_analysis/afq_tract_profiles.html).
+This is a correctness step, not a cosmetic one: ordinary tractography
+produces streamlines running in both directions along a tract, and
+without orienting them consistently, a given node index would land on
+different physical locations on different streamlines.
 
 Two rendering backends are provided:
   - `render_bundle_fury()`: matches the pyAFQ ecosystem's own
@@ -51,9 +58,11 @@ import numpy as np
 import pandas as pd
 import nibabel as nib
 from dipy.io.streamline import load_trk
-from dipy.tracking.streamline import set_number_of_points
-from matplotlib import cm
-import matplotlib.pyplot as plt
+from dipy.tracking.streamline import set_number_of_points, orient_by_streamline
+from dipy.segment.clustering import QuickBundles
+from dipy.segment.featurespeed import ResampleFeature
+from dipy.segment.metricspeed import AveragePointwiseEuclideanMetric
+import matplotlib.cm as cm
 import matplotlib.colors as mcolors
 
 
@@ -165,8 +174,37 @@ def load_bundle_streamlines(
     if len(streamlines) == 0:
         raise ValueError(f"No streamlines found in {trk_path}")
 
+    # orient every streamline consistently before resampling -- this is a
+    # real correctness step, not just cosmetic: without it, a streamline
+    # that happens to run "backwards" relative to its neighbors (which
+    # ordinary tractography produces) gets its node correspondence
+    # reversed, and node k's color would land on a different physical
+    # location than node k on every other streamline. This follows dipy's
+    # own AFQ tract profile method (see
+    # https://docs.dipy.org/stable/examples_built/streamline_analysis/afq_tract_profiles.html),
+    # which orients every streamline in a bundle against a reference
+    # centroid via orient_by_streamline() before extracting profiles.
+    #
+    # dipy/pyAFQ's own profile computation orients against a shared
+    # ATLAS/template bundle centroid, specifically so orientation is
+    # consistent ACROSS SUBJECTS for group-level profile computation.
+    # That cross-subject consistency isn't needed here: this script paints
+    # an already-computed node-wise value (from your GAMM, fit across the
+    # whole sample) onto ONE subject's own streamlines, so internal
+    # consistency WITHIN this one subject's bundle is sufficient -- we use
+    # this subject's own bundle centroid as the orientation reference
+    # (via QuickBundles with threshold=np.inf, so all streamlines form one
+    # cluster and contribute to a single centroid), rather than requiring
+    # an external atlas bundle most users won't have on hand for this step.
     resampled = [set_number_of_points(sl, n_points) for sl in streamlines]
-    return resampled
+
+    feature = ResampleFeature(nb_points=n_points)
+    metric = AveragePointwiseEuclideanMetric(feature)
+    qb = QuickBundles(threshold=np.inf, metric=metric)
+    centroid = qb.cluster(resampled).centroids[0]
+
+    oriented = orient_by_streamline(resampled, centroid)
+    return list(oriented)
 
 
 # ---------------------------------------------------------------------------
@@ -192,7 +230,7 @@ def build_node_colors(
     vmin = node_values.min() if vmin is None else vmin
     vmax = node_values.max() if vmax is None else vmax
     norm = mcolors.Normalize(vmin=vmin, vmax=vmax)
-    cmap = plt.get_cmap(cmap_name)
+    cmap = cm.get_cmap(cmap_name)
     colors = cmap(norm(node_values))[:, :3]
     return colors, norm, cmap
 
@@ -206,7 +244,8 @@ def render_bundle_fury(
     node_colors: np.ndarray,
     out_path: str = "bundle_fsiq2_effect.png",
     tube_radius: float = 0.3,
-    size: tuple[int, int] = (800, 600),
+    size: tuple[int, int] = (1200, 900),
+    material: str = "basic",
 ) -> None:
     """
     Render the bundle colored along its length by `node_colors`, using
@@ -216,8 +255,27 @@ def render_bundle_fury(
     of points as `node_colors` has rows (i.e., already resampled via
     `load_bundle_streamlines(..., n_points=len(node_colors))`).
 
-    If this raises a WebGPU/device error on your machine, use
-    `render_bundle_matplotlib()` instead -- see the module docstring.
+    `material="basic"` (the default here) is deliberate, not cosmetic:
+    the per-node coloring workaround below splits every streamline into
+    many short 2-point segments (so a single bundle can easily produce
+    several thousand individual tube segments). fury 2.x's default
+    `material="phong"` is a LIT material, and pygfx appears to allocate
+    its directional-light shadow-map texture sized in proportion to the
+    number of shadow-casting objects in the scene, regardless of whether
+    any actual DirectionalLight is present (window.Scene() only adds an
+    AmbientLight by default, which doesn't need shadows at all) -- with
+    enough segments, this can exceed the GPU/driver's max texture
+    dimension (seen in testing as a wgpu "GPUValidationError: Dimension
+    Z value <N> exceeds the limit of 2048"). `material="basic"` is
+    unlit and should skip that shadow-texture allocation entirely,
+    independent of segment count. This wasn't reproducible in this
+    environment's own sandbox (a different, earlier GPU-support error
+    blocks fury here entirely) -- if you still hit a shadow/texture
+    error with material="basic" on your machine, that's a sign the
+    issue isn't the lighting pathway after all, and the matplotlib
+    fallback below is the more dependable option on this machine.
+    If you want phong's nicer shaded-tube look and your GPU/driver
+    handles it, pass material="phong" explicitly.
     """
     from fury import actor, window
 
@@ -244,11 +302,11 @@ def render_bundle_fury(
     segment_colors = np.array(segment_colors)
 
     line_actor = actor.streamtube(
-        lines=segments, colors=segment_colors, radius=tube_radius
+        lines=segments, colors=segment_colors, radius=tube_radius, material=material
     )
     scene = window.Scene()
     scene.add(line_actor)
-    window.snapshot(scene=scene, fname=out_path, screen_config=(0, 0, size[0], size[1]))
+    window.snapshot(scene=scene, fname=out_path, screen_config=[size])
     print(f"Saved fury rendering to {out_path}")
 
 
@@ -321,15 +379,15 @@ def render_bundle_matplotlib(
 
 if __name__ == "__main__":
     # --- adjust these paths for your data ---
-    CSV_PATH = "results/FSIQ_AFQprob/GAMM_nodewise_results/RILF_FSIQ2_effect.csv"       # saved from R, see module docstring
-    SUBJECT = "sub-E1600121J"
-    SESSION = "ses-03"                      # omit/adjust if your BIDS tree has no session level
-    AFQ_DERIV = f"data/site-160/derivatives/afq/{SUBJECT}/{SESSION}/dwi"
+    CSV_PATH = "RILF_FSIQ2_effect.csv"       # saved from R, see module docstring
+    SUBJECT = "sub-XXXX"
+    SESSION = "ses-YYYY"                      # omit/adjust if your BIDS tree has no session level
+    AFQ_DERIV = f"derivatives/afq/{SUBJECT}/{SESSION}"
     TRK_PATH = (
-        f"{AFQ_DERIV}/bundles/"
-        f"{SUBJECT}_{SESSION}_desc-RightInferiorLongitudinal_tractography.trk"
+        f"{AFQ_DERIV}/clean_bundles/"
+        f"{SUBJECT}_{SESSION}_..._desc-prob-afq-RILF_tractography.trk"
     )  # fill in the exact filename -- check your clean_bundles/ or bundles/ folder
-    REFERENCE_PATH = f"{AFQ_DERIV}/{SUBJECT}_{SESSION}_b0ref.nii.gz"
+    REFERENCE_PATH = f"{AFQ_DERIV}/{SUBJECT}_{SESSION}_..._dwi_b0.nii.gz"
     N_NODES = 100
 
     node_values = load_nodewise_effect(CSV_PATH, n_nodes=N_NODES)
@@ -337,7 +395,7 @@ if __name__ == "__main__":
     node_colors, norm, cmap = build_node_colors(node_values, cmap_name="viridis")
 
     try:
-        render_bundle_fury(streamlines, node_colors, out_path="results/FSIQ_AFQprob/GAMM_bundle_viz/RILF_FSIQ2_effect_fury.png")
+        render_bundle_fury(streamlines, node_colors, out_path="RILF_FSIQ2_effect_fury.png")
     except Exception as e:
         print(f"fury rendering failed ({e}); falling back to matplotlib.")
         render_bundle_matplotlib(
