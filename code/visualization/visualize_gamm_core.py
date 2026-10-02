@@ -218,7 +218,7 @@ def render_core_fury(
     tube_actor = actor.streamtube(lines=segments, colors=segment_colors, radius=tube_radius)
     scene = window.Scene()
     scene.add(tube_actor)
-    window.snapshot(scene=scene, fname=out_path, screen_config=[size])
+    window.snapshot(scene=scene, fname=out_path, screen_config=(0, 0, size[0], size[1]))
     print(f"Saved fury rendering to {out_path}")
 
 
