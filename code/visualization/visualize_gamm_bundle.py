@@ -62,6 +62,7 @@ from dipy.tracking.streamline import set_number_of_points, orient_by_streamline
 from dipy.segment.clustering import QuickBundles
 from dipy.segment.featurespeed import ResampleFeature
 from dipy.segment.metricspeed import AveragePointwiseEuclideanMetric
+import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
 
@@ -230,7 +231,7 @@ def build_node_colors(
     vmin = node_values.min() if vmin is None else vmin
     vmax = node_values.max() if vmax is None else vmax
     norm = mcolors.Normalize(vmin=vmin, vmax=vmax)
-    cmap = cm.get_cmap(cmap_name)
+    cmap = plt.get_cmap(cmap_name)
     colors = cmap(norm(node_values))[:, :3]
     return colors, norm, cmap
 
@@ -379,15 +380,15 @@ def render_bundle_matplotlib(
 
 if __name__ == "__main__":
     # --- adjust these paths for your data ---
-    CSV_PATH = "RILF_FSIQ2_effect.csv"       # saved from R, see module docstring
-    SUBJECT = "sub-XXXX"
-    SESSION = "ses-YYYY"                      # omit/adjust if your BIDS tree has no session level
-    AFQ_DERIV = f"derivatives/afq/{SUBJECT}/{SESSION}"
+    CSV_PATH = "results/FSIQ_AFQprob/GAMM_nodewise_results/RILF_FSIQ2_effect.csv"       # saved from R, see module docstring
+    SUBJECT = "sub-E1600121J"
+    SESSION = "ses-03"                      # omit/adjust if your BIDS tree has no session level
+    AFQ_DERIV = f"data/site-160/derivatives/afq/{SUBJECT}/{SESSION}"
     TRK_PATH = (
-        f"{AFQ_DERIV}/clean_bundles/"
-        f"{SUBJECT}_{SESSION}_..._desc-prob-afq-RILF_tractography.trk"
+        f"{AFQ_DERIV}/dwi/bundles/"
+        f"{SUBJECT}_{SESSION}_desc-RightInferiorLongitudinal_tractography.trk"
     )  # fill in the exact filename -- check your clean_bundles/ or bundles/ folder
-    REFERENCE_PATH = f"{AFQ_DERIV}/{SUBJECT}_{SESSION}_..._dwi_b0.nii.gz"
+    REFERENCE_PATH = f"{AFQ_DERIV}/dwi/{SUBJECT}_{SESSION}_b0ref.nii.gz"
     N_NODES = 100
 
     node_values = load_nodewise_effect(CSV_PATH, n_nodes=N_NODES)
