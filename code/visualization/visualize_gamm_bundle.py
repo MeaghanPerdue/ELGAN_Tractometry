@@ -5,6 +5,8 @@ subject's actual bundle streamlines, following the approach shown in
 pyAFQ's "Visualizing AFQ derivatives" tutorial
 (https://tractometry.org/pyAFQ/tutorials/tutorial_examples/plot_005_viz.html).
 
+Written with Claude Sonnet 5
+
 Workflow
 --------
 1. In R: save the per-node GAMM result for one tract to a CSV with at
