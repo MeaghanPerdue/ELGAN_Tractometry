@@ -48,6 +48,7 @@ from dipy.tracking.streamline import set_number_of_points, orient_by_streamline
 from dipy.segment.clustering import QuickBundles
 from dipy.segment.featurespeed import ResampleFeature
 from dipy.segment.metricspeed import AveragePointwiseEuclideanMetric
+import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
 
@@ -165,7 +166,7 @@ def build_node_colors(
     vmin = node_values.min() if vmin is None else vmin
     vmax = node_values.max() if vmax is None else vmax
     norm = mcolors.Normalize(vmin=vmin, vmax=vmax)
-    cmap = cm.get_cmap(cmap_name)
+    cmap = plt.get_cmap(cmap_name)
     colors = cmap(norm(node_values))[:, :3]
     return colors, norm, cmap
 
