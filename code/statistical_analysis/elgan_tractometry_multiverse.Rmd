@@ -64,6 +64,13 @@ base_path<-"/Volumes/LaCie/Projects/elgan_dti/data"
 
 subs<-read.csv(file.path(base_path, "demog_beh", "elgan_subject_level_data_for_tractometry.csv"))
 
+# Scale subject-level variables for analysis
+subs_scaled <- subs %>%
+  mutate(across(
+    c(mri_age, gadays, bw, mean_fd, FSIQ2),
+    ~ as.numeric(scale(.x))
+  ))
+
 
 # Read harmonized node-level data
 nodesprob<-read.csv(file.path(base_path, "harmonized", "afq_prob", "harmonized_nodes.csv"))
@@ -77,6 +84,23 @@ model_vars <- c("FSIQ2", "mri_age", "gadays", "bw", "female", "subjectID", "fami
 prob_complete <- prob %>%
   filter(complete.cases(select(., all_of(model_vars)))) %>%
   mutate(across(c(subjectID, familyID, female), as.factor))
+
+#Merge scaled subject data with nodes
+prob_scaledsubs<-left_join(nodesprob, subs_scaled, by="subjectID")
+
+# filter dataframe to relevant columns first and complete rows
+# scale data (z-score) for better visualization
+prob_complete_scaled <- prob_scaledsubs %>%
+  filter(complete.cases(select(., all_of(model_vars)))) %>%
+  mutate(across(c(subjectID, familyID, female), as.factor)) %>%
+  select(subjectID, tractID, nodeID, dti_fa, female, mri_age,
+         gadays, bw, mean_fd, FSIQ2, familyID) %>%
+  mutate(across(
+    c(dti_fa),
+    ~ as.numeric(scale(.x))
+  ))
+
+
 
 ```
 
@@ -97,6 +121,9 @@ subs_fsiq_corr<-subs_fsiq %>%
 cor(subs_fsiq_corr)
 cor.test(subs_fsiq_corr$gadays, subs_fsiq_corr$bw)
 
+## Check distributions
+ggplot(aes(gadays), data=subs) +
+  geom_histogram()
 
 ```
 
@@ -205,14 +232,6 @@ Run GAMMs with continuous variable of interest
 ```{r GAMMs}
 source("gamm_tractometry.R")
 
-# scale data (z-score) for better visualization
-# filter dataframe to relevant columns first
-prob_complete_scaled <- prob_complete %>%
-  select("subjectID", "tractID", "nodeID", "dti_fa", "female", "mri_age",
-         "gadays", "bw", "mean_fd", "FSIQ2", "familyID") %>%
-  mutate(across(c("dti_fa", "mri_age", "gadays", "bw", "mean_fd", "FSIQ2")))
-
-
 
 # full tract list
 tracts<- c("Callosum Anterior Frontal",
@@ -242,8 +261,8 @@ gammout <- run_gamm_pipeline_multi_tract(
   data            = prob_complete_scaled,   # all tracts, unfiltered
   tracts          = tracts,
   outcome         = "dti_fa",
-  var_of_interest = "FSIQ2",
-  covariates      = c("mri_age", "gadays", "bw", "mean_fd", "female"),
+  var_of_interest = "gadays",
+  covariates      = c("mri_age", "mean_fd", "female"),
   tract_col       = "tractID",
   subject_col     = "subjectID",
   family_col      = "familyID",
@@ -253,35 +272,28 @@ gammout <- run_gamm_pipeline_multi_tract(
 )
 
 # Save output for future examination
-save(gammout, file="/Volumes/LaCie/Projects/elgan_dti/results/FSIQ_AFQprob/FSIQ_GAMMs_SCALED_AFQ_prob_output.RData")
-load(file="/Volumes/LaCie/Projects/elgan_dti/results/FSIQ_AFQprob/FSIQ_GAMMs_SCALED_AFQ_prob_output.RData")
+save(gammout, file="/Volumes/LaCie/Projects/elgan_dti/results/GA_AFQprob/GA_GAMMs_SCALED_AFQ_prob_output.RData")
+load(file="/Volumes/LaCie/Projects/elgan_dti/results/GA_AFQprob/GA_GAMMs_SCALED_AFQ_prob_output.RData")
 
 gammout$summary                                            # one row per tract: cluster counts/extents
-write.csv(gammout$summary, file="/Volumes/LaCie/Projects/elgan_dti/results/FSIQ_AFQprob/FSIQ_GAMMs_SCALED_AFQ_prob_tract_summary.csv", row.names=FALSE)
+write.csv(gammout$summary, file="/Volumes/LaCie/Projects/elgan_dti/results/GA_AFQprob/GA_GAMMs_SCALED_AFQ_prob_tract_summary.csv", row.names=FALSE)
 
 #gammout$results[["Callosum Occipital"]]$clusters   # node ranges for that tract
 plot_gamm_result(gammout$results[["Callosum Occipital"]],
                   "Callosum Occipital", "FSIQ2")
 
-# Write tract-specific results for visualization - use as input to visuzlize_gamm_bundle.py 
+# Write tract-specific results for visualization - use as input to visualize_gamm_bundle.py 
 sm <- gammout$results[["Right Inferior Longitudinal"]]$sm
-write.csv(sm[, c("nodeID", ".estimate")], "/Volumes/LaCie/Projects/elgan_dti/results/FSIQ_AFQprob/GAMM_nodewise_results/RILF_FSIQ2_effect.csv", row.names = FALSE)
+write.csv(sm[, c("nodeID", ".estimate")], "/Volumes/LaCie/Projects/elgan_dti/results/GA_AFQprob/GAMM_nodewise_results/RILF_GA_effect.csv", row.names = FALSE)
 
 # Output plots all tracts
 library(purrr)
 library(patchwork)
 
-cc<-c("Callosum Anterior Frontal",
-           "Callosum Motor",
-           "Callosum Occipital", 
-           "Callosum Orbital",
-           "Callosum Posterior Parietal",
-           "Callosum Superior Frontal",      
-           "Callosum Superior Parietal"
-)
+
 
 ## Create plotting function
-plot_one_tract <- function(tract_name, gammout, covariate = "FSIQ2") {
+plot_one_tract <- function(tract_name, gammout, covariate = "gadays") {
   plot_gamm_result(
     gammout$results[[tract_name]],
     tract_name,
@@ -291,9 +303,9 @@ plot_one_tract <- function(tract_name, gammout, covariate = "FSIQ2") {
 
 ## plot each tract (replaces title and removes subtitle from the original plots)
 plots <- map(tracts, function(tr) {
-  plot_gamm_result(gammout$results[[tr]], tr, "FSIQ2") +
+  plot_gamm_result(gammout$results[[tr]], tr, "gadays") +
     ggtitle(tr) +
-    coord_cartesian(ylim = c(-.15, .15)) +
+#    coord_cartesian(ylim = c(-.15, .15)) +
     theme(plot.subtitle = element_blank())
 })
 
